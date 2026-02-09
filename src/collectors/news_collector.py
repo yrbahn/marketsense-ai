@@ -67,82 +67,93 @@ class NewsCollector(BaseCollector):
                 raise
 
     # ─────────────────────────────────────
-    # Google News RSS (한국 종목)
+    # Naver Stock API (한국 종목)
     # ─────────────────────────────────────
     def _collect_naver_finance(self, session, tickers: List[str]) -> int:
-        """Google News RSS로 한국 종목 뉴스 수집"""
+        """네이버 증권 모바일 API로 한국 종목 뉴스 수집"""
         count = 0
         total_tickers = len(tickers)
-
-        # 종목명 매핑
-        ticker_names = {}
-        for t in tickers:
-            stock = session.query(Stock).filter_by(ticker=t).first()
-            if stock:
-                ticker_names[t] = stock.name
+        api_headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
 
         for idx, ticker in enumerate(tickers):
-            if idx % 50 == 0:
-                logger.info(f"[GoogleNews] 진행: {idx}/{total_tickers} ({count}건 수집)")
+            if idx % 100 == 0 and idx > 0:
+                logger.info(f"[NaverAPI] 진행: {idx}/{total_tickers} ({count}건 수집)")
 
             stock = session.query(Stock).filter_by(ticker=ticker).first()
             stock_id = stock.id if stock else None
-            stock_name = ticker_names.get(ticker, ticker)
 
             try:
-                # Google News RSS 검색
-                query = f"{stock_name}+주가"
-                rss_url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
-                feed = feedparser.parse(rss_url)
+                url = f"https://m.stock.naver.com/api/news/stock/{ticker}?pageSize=20&page=1"
+                resp = requests.get(url, headers=api_headers, timeout=10)
+
+                if resp.status_code != 200:
+                    continue
+
+                data = resp.json()
+                if not isinstance(data, list):
+                    continue
 
                 cutoff = datetime.now() - timedelta(days=self.lookback_days)
 
-                for entry in feed.entries[:self.max_articles]:
-                    url = entry.get("link", "")
-                    title = entry.get("title", "")
-                    if not url or not title:
-                        continue
+                for group in data:
+                    items = group.get("items", [])
+                    for article in items:
+                        article_id = article.get("id", "")
+                        title = article.get("title") or article.get("titleFull", "")
+                        body = article.get("body", "")
+                        office = article.get("officeName", "")
+                        dt_str = article.get("datetime", "")
 
-                    # 날짜 파싱
-                    pub_at = None
-                    if hasattr(entry, "published_parsed") and entry.published_parsed:
-                        pub_at = datetime(*entry.published_parsed[:6])
-                        if pub_at < cutoff:
+                        if not title or not article_id:
                             continue
 
-                    # 중복 체크
-                    exists = session.query(NewsArticle).filter_by(url=url).first()
-                    if exists:
-                        continue
+                        # 날짜 파싱 (YYYYMMDDHHmm)
+                        pub_at = None
+                        try:
+                            pub_at = datetime.strptime(dt_str, "%Y%m%d%H%M")
+                        except (ValueError, TypeError):
+                            pass
 
-                    # 소스 추출 (제목에서 " - 매일경제" 부분)
-                    source_name = ""
-                    if " - " in title:
-                        parts = title.rsplit(" - ", 1)
-                        title = parts[0]
-                        source_name = parts[1] if len(parts) > 1 else ""
+                        if pub_at and pub_at < cutoff:
+                            continue
 
-                    news = NewsArticle(
-                        stock_id=stock_id,
-                        ticker=ticker,
-                        title=title,
-                        url=url,
-                        source="google_news",
-                        author=source_name,
-                        published_at=pub_at,
-                        category="finance",
-                        related_tickers=[ticker],
-                    )
-                    session.add(news)
-                    count += 1
+                        # 네이버 뉴스 URL 생성
+                        office_id = article.get("officeId", "")
+                        article_num = article.get("articleId", "")
+                        news_url = f"https://n.news.naver.com/mnews/article/{office_id}/{article_num}"
 
-                time.sleep(0.5)  # Rate limit
+                        # 중복 체크
+                        exists = session.query(NewsArticle).filter_by(url=news_url).first()
+                        if exists:
+                            continue
+
+                        news = NewsArticle(
+                            stock_id=stock_id,
+                            ticker=ticker,
+                            title=title,
+                            summary=body[:500] if body else None,
+                            url=news_url,
+                            source="naver",
+                            author=office,
+                            published_at=pub_at,
+                            source_id=article_id,
+                            category="finance",
+                            related_tickers=[ticker],
+                        )
+                        session.add(news)
+                        count += 1
+
+                # 커밋 주기적으로
+                if idx % 50 == 0 and idx > 0:
+                    session.flush()
+
+                time.sleep(0.2)
 
             except Exception as e:
-                logger.debug(f"[GoogleNews] {ticker} ({stock_name}) 실패: {e}")
+                logger.debug(f"[NaverAPI] {ticker} 실패: {e}")
                 continue
 
-        logger.info(f"[GoogleNews] 총 {count}건 수집 완료")
+        logger.info(f"[NaverAPI] 총 {count}건 수집 완료")
         return count
 
     # ─────────────────────────────────────
