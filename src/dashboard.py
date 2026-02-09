@@ -55,6 +55,7 @@ def main():
             "🏦 Fundamentals",
             "📈 Price & Indicators",
             "🌍 Macro",
+            "🤖 AI Analysis",
             "⚙️ Pipeline Runs",
         ])
 
@@ -68,6 +69,8 @@ def main():
             render_dynamics(session)
         elif page == "🌍 Macro":
             render_macro(session)
+        elif page == "🤖 AI Analysis":
+            render_ai_analysis(session)
         elif page == "⚙️ Pipeline Runs":
             render_pipeline_runs(session)
 
@@ -391,6 +394,249 @@ def render_pipeline_runs(session):
         st.dataframe(stats_df, use_container_width=True)
     else:
         st.info("파이프라인 실행 이력 없음")
+
+
+# ═══════════════════════════════════════
+# AI Analysis Page
+# ═══════════════════════════════════════
+def render_ai_analysis(session):
+    st.header("🤖 AI 에이전트 분석")
+    
+    st.info("💡 Gemini API를 사용하여 종목을 분석합니다")
+    
+    # Load agents (lazy import)
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    try:
+        from src.agents import NewsAgent, FundamentalsAgent, DynamicsAgent, MacroAgent, SignalAgent
+        
+        # Ticker selection
+        stocks = session.query(Stock).filter_by(is_active=True).order_by(Stock.name).all()
+        ticker_options = {f"{s.name} ({s.ticker})": s.ticker for s in stocks[:100]}  # 상위 100개만
+        
+        selected = st.selectbox("📊 종목 선택", options=ticker_options.keys())
+        ticker = ticker_options[selected] if selected else None
+        
+        if not ticker:
+            st.warning("종목을 선택하세요")
+            return
+        
+        # Agent selection
+        agent_type = st.radio(
+            "🤖 분석 에이전트 선택",
+            ["📰 뉴스 분석", "💰 재무 분석", "📈 기술적 분석", "🎯 종합 분석"],
+            horizontal=True
+        )
+        
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            analyze_btn = st.button("▶️ 분석 시작", type="primary", use_container_width=True)
+        
+        if analyze_btn:
+            config = load_config()
+            db = get_db()
+            
+            with st.spinner("🤖 AI 분석 중..."):
+                try:
+                    if agent_type == "📰 뉴스 분석":
+                        agent = NewsAgent(config, db)
+                        result = agent.analyze(ticker)
+                        
+                        if "error" not in result:
+                            st.success("✅ 뉴스 분석 완료")
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                sentiment_emoji = {"positive": "😊", "negative": "😟", "neutral": "😐"}
+                                st.metric("감성", f"{sentiment_emoji.get(result.get('sentiment'), '?')} {result.get('sentiment', 'N/A')}")
+                            with col2:
+                                st.metric("신뢰도", f"{result.get('confidence', 0):.0%}")
+                            with col3:
+                                st.metric("영향도", result.get('impact', 'N/A'))
+                            
+                            st.subheader("📝 요약")
+                            st.write(result.get('summary', 'N/A'))
+                            
+                            st.subheader("🔑 주요 이벤트")
+                            for event in result.get('key_events', []):
+                                st.markdown(f"- {event}")
+                            
+                            st.subheader("🧠 분석 근거")
+                            st.write(result.get('reasoning', 'N/A'))
+                            
+                            with st.expander("📄 전체 JSON 결과"):
+                                st.json(result)
+                        else:
+                            st.error(f"❌ 오류: {result['error']}")
+                    
+                    elif agent_type == "💰 재무 분석":
+                        agent = FundamentalsAgent(config, db)
+                        result = agent.analyze(ticker)
+                        
+                        if "error" not in result:
+                            st.success("✅ 재무 분석 완료")
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("밸류에이션", result.get('valuation', 'N/A'))
+                            with col2:
+                                st.metric("재무 건전성", result.get('financial_health', 'N/A'))
+                            with col3:
+                                st.metric("신뢰도", f"{result.get('confidence', 0):.0%}")
+                            
+                            st.subheader("📊 핵심 지표")
+                            metrics = result.get('key_metrics', {})
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.write(f"**수익성**: {metrics.get('profitability', 'N/A')}")
+                            with col2:
+                                st.write(f"**성장성**: {metrics.get('growth', 'N/A')}")
+                            with col3:
+                                st.write(f"**안정성**: {metrics.get('stability', 'N/A')}")
+                            
+                            st.subheader("📝 요약")
+                            st.write(result.get('summary', 'N/A'))
+                            
+                            st.subheader("🧠 분석 근거")
+                            st.write(result.get('reasoning', 'N/A'))
+                            
+                            with st.expander("📄 전체 JSON 결과"):
+                                st.json(result)
+                        else:
+                            st.error(f"❌ 오류: {result['error']}")
+                    
+                    elif agent_type == "📈 기술적 분석":
+                        agent = DynamicsAgent(config, db)
+                        result = agent.analyze(ticker)
+                        
+                        if "error" not in result:
+                            st.success("✅ 기술적 분석 완료")
+                            
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("현재가", f"{result.get('current_price', 0):,.0f}원")
+                            with col2:
+                                trend_emoji = {"uptrend": "📈", "downtrend": "📉", "sideways": "➡️"}
+                                st.metric("추세", f"{trend_emoji.get(result.get('trend'), '?')} {result.get('trend', 'N/A')}")
+                            with col3:
+                                signal_emoji = {"buy": "💚", "sell": "🔴", "hold": "🟡"}
+                                st.metric("신호", f"{signal_emoji.get(result.get('signal'), '?')} {result.get('signal', 'N/A')}")
+                            with col4:
+                                st.metric("신뢰도", f"{result.get('confidence', 0):.0%}")
+                            
+                            st.subheader("🎯 주요 가격대")
+                            levels = result.get('key_levels', {})
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write("**지지선**")
+                                for level in levels.get('support', []):
+                                    st.write(f"- {level:,.0f}원")
+                            with col2:
+                                st.write("**저항선**")
+                                for level in levels.get('resistance', []):
+                                    st.write(f"- {level:,.0f}원")
+                            
+                            st.subheader("📊 지표 해석")
+                            st.write(result.get('indicators_summary', 'N/A'))
+                            
+                            st.subheader("🧠 분석 근거")
+                            st.write(result.get('reasoning', 'N/A'))
+                            
+                            with st.expander("📄 전체 JSON 결과"):
+                                st.json(result)
+                        else:
+                            st.error(f"❌ 오류: {result['error']}")
+                    
+                    elif agent_type == "🎯 종합 분석":
+                        st.info("🔄 4개 에이전트 순차 실행 중...")
+                        
+                        # News
+                        with st.spinner("📰 뉴스 분석 중..."):
+                            news_agent = NewsAgent(config, db)
+                            news_result = news_agent.analyze(ticker)
+                        st.success("✅ 뉴스 분석 완료")
+                        
+                        # Fundamentals
+                        with st.spinner("💰 재무 분석 중..."):
+                            fund_agent = FundamentalsAgent(config, db)
+                            fund_result = fund_agent.analyze(ticker)
+                        st.success("✅ 재무 분석 완료")
+                        
+                        # Dynamics
+                        with st.spinner("📈 기술적 분석 중..."):
+                            dyn_agent = DynamicsAgent(config, db)
+                            dyn_result = dyn_agent.analyze(ticker)
+                        st.success("✅ 기술적 분석 완료")
+                        
+                        # Macro
+                        with st.spinner("🌍 거시경제 분석 중..."):
+                            macro_agent = MacroAgent(config, db)
+                            macro_result = macro_agent.analyze()
+                        st.success("✅ 거시경제 분석 완료")
+                        
+                        # Signal aggregation
+                        with st.spinner("🎯 최종 신호 통합 중..."):
+                            signal_agent = SignalAgent(config, db)
+                            final_result = signal_agent.aggregate(
+                                ticker,
+                                news_result=news_result,
+                                fundamentals_result=fund_result,
+                                dynamics_result=dyn_result,
+                                macro_result=macro_result,
+                            )
+                        
+                        st.success("✅ 종합 분석 완료!")
+                        
+                        st.divider()
+                        
+                        # Final signal
+                        st.subheader("🎯 최종 투자 신호")
+                        
+                        if "error" not in final_result:
+                            signal = final_result.get('signal', 'N/A')
+                            signal_colors = {"BUY": "🟢", "SELL": "🔴", "HOLD": "🟡"}
+                            
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("신호", f"{signal_colors.get(signal, '?')} {signal}")
+                            with col2:
+                                st.metric("신뢰도", f"{final_result.get('confidence', 0):.0%}")
+                            with col3:
+                                st.metric("리스크", final_result.get('risk_level', 'N/A'))
+                            with col4:
+                                st.metric("투자기간", final_result.get('time_horizon', 'N/A'))
+                            
+                            if final_result.get('target_price'):
+                                st.metric("🎯 목표가", f"{final_result['target_price']:,.0f}원")
+                            
+                            st.subheader("📝 투자 의견")
+                            st.write(final_result.get('summary', 'N/A'))
+                            
+                            st.subheader("🧠 통합 분석 근거")
+                            st.write(final_result.get('reasoning', 'N/A'))
+                            
+                            # Individual results
+                            with st.expander("📰 뉴스 분석 상세"):
+                                st.json(news_result)
+                            with st.expander("💰 재무 분석 상세"):
+                                st.json(fund_result)
+                            with st.expander("📈 기술적 분석 상세"):
+                                st.json(dyn_result)
+                            with st.expander("🌍 거시경제 분석 상세"):
+                                st.json(macro_result)
+                        else:
+                            st.error(f"❌ 통합 분석 오류: {final_result.get('error')}")
+                
+                except Exception as e:
+                    st.error(f"❌ 분석 실패: {e}")
+                    import traceback
+                    with st.expander("🐛 에러 상세"):
+                        st.code(traceback.format_exc())
+    
+    except ImportError as e:
+        st.error(f"❌ 에이전트 모듈 로드 실패: {e}")
+        st.info("💡 `GOOGLE_API_KEY` 환경변수를 설정했는지 확인하세요")
 
 
 if __name__ == "__main__":
