@@ -11,6 +11,7 @@ alembic>=1.13.0
 feedparser>=6.0.0
 sec-edgar-downloader>=5.0.0
 python-dotenv>=1.0.0
+streamlit>=1.30.0
 chromadb>=0.4.0
 tiktoken>=0.5.0
 schedule>=1.2.0

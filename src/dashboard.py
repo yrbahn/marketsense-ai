@@ -1,0 +1,397 @@
+"""
+MarketSenseAI 2.0 - Data Dashboard
+
+수집된 데이터를 시각화하는 Streamlit 대시보드
+
+Usage:
+  streamlit run src/dashboard.py
+"""
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import streamlit as st
+import pandas as pd
+from datetime import datetime, timedelta
+from sqlalchemy import func
+
+from src.storage.database import Database
+from src.storage.models import (
+    Stock, NewsArticle, FinancialStatement, SECFiling,
+    EarningsCall, PriceData, TechnicalIndicator,
+    MacroReport, MacroIndicator, PipelineRun
+)
+from src.utils.helpers import load_config
+
+# ─────────────────────────────────────
+# Page Config
+# ─────────────────────────────────────
+st.set_page_config(
+    page_title="MarketSenseAI Dashboard",
+    page_icon="📊",
+    layout="wide",
+)
+
+@st.cache_resource
+def get_db():
+    config = load_config()
+    db_url = config.get("database", {}).get("url", "sqlite:///data/marketsense.db")
+    return Database(db_url)
+
+
+def main():
+    st.title("📊 MarketSenseAI 2.0 - Data Dashboard")
+
+    db = get_db()
+    session = db.get_new_session()
+
+    try:
+        # ═══════════════════════════════════
+        # Sidebar: Navigation
+        # ═══════════════════════════════════
+        page = st.sidebar.radio("📂 Navigation", [
+            "🏠 Overview",
+            "📰 News",
+            "🏦 Fundamentals",
+            "📈 Price & Indicators",
+            "🌍 Macro",
+            "⚙️ Pipeline Runs",
+        ])
+
+        if page == "🏠 Overview":
+            render_overview(session)
+        elif page == "📰 News":
+            render_news(session)
+        elif page == "🏦 Fundamentals":
+            render_fundamentals(session)
+        elif page == "📈 Price & Indicators":
+            render_dynamics(session)
+        elif page == "🌍 Macro":
+            render_macro(session)
+        elif page == "⚙️ Pipeline Runs":
+            render_pipeline_runs(session)
+
+    finally:
+        session.close()
+
+
+# ═══════════════════════════════════════
+# Overview Page
+# ═══════════════════════════════════════
+def render_overview(session):
+    st.header("🏠 데이터 수집 현황")
+
+    # Summary metrics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        count = session.query(Stock).filter_by(is_active=True).count()
+        st.metric("🏢 종목 수", f"{count:,}")
+    with col2:
+        count = session.query(NewsArticle).count()
+        st.metric("📰 뉴스 기사", f"{count:,}")
+    with col3:
+        count = session.query(PriceData).count()
+        st.metric("📈 주가 데이터", f"{count:,}")
+    with col4:
+        count = session.query(MacroReport).count()
+        st.metric("🌍 매크로 보고서", f"{count:,}")
+
+    st.divider()
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        count = session.query(FinancialStatement).count()
+        st.metric("📋 재무제표", f"{count:,}")
+    with col2:
+        count = session.query(SECFiling).count()
+        st.metric("📄 SEC Filings", f"{count:,}")
+    with col3:
+        count = session.query(EarningsCall).count()
+        st.metric("🎤 Earnings Calls", f"{count:,}")
+    with col4:
+        count = session.query(MacroIndicator).count()
+        st.metric("📉 매크로 지표", f"{count:,}")
+
+    # Recent pipeline runs
+    st.subheader("⚙️ 최근 파이프라인 실행")
+    runs = session.query(PipelineRun).order_by(PipelineRun.started_at.desc()).limit(10).all()
+    if runs:
+        df = pd.DataFrame([{
+            "파이프라인": r.pipeline_name,
+            "상태": "✅" if r.status == "success" else "❌" if r.status == "failed" else "🔄",
+            "수집 건수": r.records_collected or 0,
+            "시작": r.started_at,
+            "종료": r.finished_at,
+        } for r in runs])
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.info("아직 파이프라인 실행 이력이 없습니다.")
+
+    # Stocks by sector
+    st.subheader("🏢 섹터별 종목 분포")
+    sectors = session.query(
+        Stock.sector, func.count(Stock.id)
+    ).filter(Stock.is_active == True).group_by(Stock.sector).all()
+    if sectors:
+        df = pd.DataFrame(sectors, columns=["섹터", "종목 수"])
+        df = df.sort_values("종목 수", ascending=True)
+        st.bar_chart(df.set_index("섹터"))
+
+
+# ═══════════════════════════════════════
+# News Page
+# ═══════════════════════════════════════
+def render_news(session):
+    st.header("📰 뉴스 데이터")
+
+    # Filters
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        stocks = session.query(Stock).filter_by(is_active=True).order_by(Stock.ticker).all()
+        ticker_options = ["전체"] + [f"{s.ticker} - {s.name}" for s in stocks]
+        selected = st.selectbox("종목", ticker_options)
+    with col2:
+        source_filter = st.selectbox("소스", ["전체", "finnhub", "newsapi", "rss"])
+    with col3:
+        days = st.slider("최근 N일", 1, 30, 7)
+
+    # Query
+    query = session.query(NewsArticle)
+    if selected != "전체":
+        ticker = selected.split(" - ")[0]
+        query = query.filter(NewsArticle.ticker == ticker)
+    if source_filter != "전체":
+        query = query.filter(NewsArticle.source == source_filter)
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    query = query.filter(NewsArticle.published_at >= cutoff)
+
+    articles = query.order_by(NewsArticle.published_at.desc()).limit(100).all()
+
+    st.info(f"📰 {len(articles)}건 표시 (최대 100건)")
+
+    for a in articles:
+        with st.expander(f"[{a.source}] {a.title}", expanded=False):
+            st.write(f"**날짜:** {a.published_at}")
+            st.write(f"**티커:** {a.ticker}")
+            if a.summary:
+                st.write(f"**요약:** {a.summary[:500]}")
+            if a.url:
+                st.write(f"🔗 [원문 링크]({a.url})")
+
+
+# ═══════════════════════════════════════
+# Fundamentals Page
+# ═══════════════════════════════════════
+def render_fundamentals(session):
+    st.header("🏦 재무 데이터")
+
+    stocks = session.query(Stock).filter_by(is_active=True).order_by(Stock.ticker).all()
+    selected = st.selectbox("종목 선택", [f"{s.ticker} - {s.name}" for s in stocks])
+    ticker = selected.split(" - ")[0]
+    stock = session.query(Stock).filter_by(ticker=ticker).first()
+
+    if not stock:
+        return
+
+    tab1, tab2, tab3 = st.tabs(["📋 재무제표", "📄 SEC Filings", "🎤 Earnings Calls"])
+
+    with tab1:
+        stmts = session.query(FinancialStatement).filter_by(
+            stock_id=stock.id
+        ).order_by(FinancialStatement.period_end.desc()).all()
+
+        if stmts:
+            df = pd.DataFrame([{
+                "유형": s.statement_type,
+                "기간": s.period_end,
+                "매출": f"${s.revenue/1e9:.1f}B" if s.revenue else "N/A",
+                "순이익": f"${s.net_income/1e9:.1f}B" if s.net_income else "N/A",
+                "영업이익": f"${s.operating_income/1e9:.1f}B" if s.operating_income else "N/A",
+                "EPS": f"${s.eps:.2f}" if s.eps else "N/A",
+            } for s in stmts])
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("재무제표 데이터 없음")
+
+    with tab2:
+        filings = session.query(SECFiling).filter_by(
+            stock_id=stock.id
+        ).order_by(SECFiling.filing_date.desc()).all()
+
+        if filings:
+            for f in filings:
+                with st.expander(f"[{f.filing_type}] {f.filing_date} (Accession: {f.accession_number})"):
+                    if f.file_url:
+                        st.write(f"🔗 [SEC 원문]({f.file_url})")
+                    if f.raw_text:
+                        st.text_area("본문 (일부)", f.raw_text[:3000], height=200)
+        else:
+            st.info("SEC Filing 데이터 없음")
+
+    with tab3:
+        calls = session.query(EarningsCall).filter_by(
+            stock_id=stock.id
+        ).order_by(EarningsCall.call_date.desc()).all()
+
+        if calls:
+            for c in calls:
+                with st.expander(f"{c.call_date} - {c.title or 'Earnings Call'}"):
+                    if c.full_transcript:
+                        st.text_area("트랜스크립트", c.full_transcript[:5000], height=300)
+        else:
+            st.info("Earnings Call 데이터 없음")
+
+
+# ═══════════════════════════════════════
+# Price & Indicators Page
+# ═══════════════════════════════════════
+def render_dynamics(session):
+    st.header("📈 주가 & 기술적 지표")
+
+    stocks = session.query(Stock).filter_by(is_active=True).order_by(Stock.ticker).all()
+    selected = st.selectbox("종목 선택", [f"{s.ticker} - {s.name}" for s in stocks])
+    ticker = selected.split(" - ")[0]
+    stock = session.query(Stock).filter_by(ticker=ticker).first()
+
+    if not stock:
+        return
+
+    days = st.slider("기간 (일)", 30, 365, 90)
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    # Price chart
+    prices = session.query(PriceData).filter(
+        PriceData.stock_id == stock.id,
+        PriceData.date >= cutoff.date()
+    ).order_by(PriceData.date).all()
+
+    if prices:
+        df = pd.DataFrame([{
+            "date": p.date,
+            "Close": p.close,
+            "Volume": p.volume,
+        } for p in prices]).set_index("date")
+
+        st.subheader(f"💰 {ticker} 주가")
+        st.line_chart(df["Close"])
+
+        st.subheader("📊 거래량")
+        st.bar_chart(df["Volume"])
+
+        # Technical indicators
+        indicators = session.query(TechnicalIndicator).filter(
+            TechnicalIndicator.stock_id == stock.id,
+            TechnicalIndicator.date >= cutoff.date()
+        ).order_by(TechnicalIndicator.date).all()
+
+        if indicators:
+            ti_df = pd.DataFrame([{
+                "date": t.date,
+                "RSI(14)": t.rsi_14,
+                "MACD": t.macd,
+                "Signal": t.macd_signal,
+                "Volatility(20d)": t.volatility_20d,
+            } for t in indicators]).set_index("date")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("RSI (14)")
+                st.line_chart(ti_df["RSI(14)"])
+            with col2:
+                st.subheader("MACD")
+                st.line_chart(ti_df[["MACD", "Signal"]])
+
+            # Latest indicators
+            latest = indicators[-1]
+            st.subheader("📋 최신 지표")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("RSI(14)", f"{latest.rsi_14:.1f}" if latest.rsi_14 else "N/A")
+            with col2:
+                st.metric("SMA(20)", f"${latest.sma_20:,.2f}" if latest.sma_20 else "N/A")
+            with col3:
+                st.metric("ATR(14)", f"${latest.atr_14:,.2f}" if latest.atr_14 else "N/A")
+            with col4:
+                st.metric("변동성(20d)", f"{latest.volatility_20d:.1%}" if latest.volatility_20d else "N/A")
+    else:
+        st.info("주가 데이터 없음")
+
+
+# ═══════════════════════════════════════
+# Macro Page
+# ═══════════════════════════════════════
+def render_macro(session):
+    st.header("🌍 매크로 경제 데이터")
+
+    tab1, tab2 = st.tabs(["📉 경제 지표", "📄 보고서"])
+
+    with tab1:
+        series_list = session.query(
+            MacroIndicator.series_id, MacroIndicator.series_name
+        ).distinct().all()
+
+        if series_list:
+            options = {f"{s[0]} - {s[1] or s[0]}": s[0] for s in series_list}
+            selected = st.multiselect("지표 선택", list(options.keys()), default=list(options.keys())[:3])
+
+            for sel in selected:
+                series_id = options[sel]
+                data = session.query(MacroIndicator).filter_by(
+                    series_id=series_id
+                ).order_by(MacroIndicator.date).all()
+
+                if data:
+                    df = pd.DataFrame([{"date": d.date, "value": d.value} for d in data]).set_index("date")
+                    st.subheader(sel)
+                    st.line_chart(df)
+        else:
+            st.info("매크로 지표 데이터 없음")
+
+    with tab2:
+        reports = session.query(MacroReport).order_by(MacroReport.published_at.desc()).limit(50).all()
+        if reports:
+            for r in reports:
+                with st.expander(f"[{r.source_name}] {r.title} ({r.published_at})"):
+                    if r.summary:
+                        st.write(f"**요약:** {r.summary[:1000]}")
+                    if r.raw_text:
+                        st.text_area("본문", r.raw_text[:3000], height=200, key=f"macro_{r.id}")
+                    if r.source_url:
+                        st.write(f"🔗 [원문]({r.source_url})")
+        else:
+            st.info("매크로 보고서 없음")
+
+
+# ═══════════════════════════════════════
+# Pipeline Runs Page
+# ═══════════════════════════════════════
+def render_pipeline_runs(session):
+    st.header("⚙️ 파이프라인 실행 이력")
+
+    runs = session.query(PipelineRun).order_by(PipelineRun.started_at.desc()).limit(50).all()
+    if runs:
+        df = pd.DataFrame([{
+            "ID": r.id,
+            "파이프라인": r.pipeline_name,
+            "상태": r.status,
+            "수집 건수": r.records_collected or 0,
+            "시작": r.started_at,
+            "종료": r.finished_at,
+            "에러": r.error_message or "",
+        } for r in runs])
+        st.dataframe(df, use_container_width=True)
+
+        # Stats
+        st.subheader("📊 수집 통계")
+        stats_df = df.groupby("파이프라인").agg(
+            실행횟수=("ID", "count"),
+            총수집=("수집 건수", "sum"),
+            성공률=("상태", lambda x: f"{(x=='success').mean():.0%}"),
+        )
+        st.dataframe(stats_df, use_container_width=True)
+    else:
+        st.info("파이프라인 실행 이력 없음")
+
+
+if __name__ == "__main__":
+    main()
