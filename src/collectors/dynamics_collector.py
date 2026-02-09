@@ -35,6 +35,20 @@ class DynamicsCollector(BaseCollector):
         self.lookback_days = self.dyn_config.get("lookback_days", 365)
         self.benchmark = self.dyn_config.get("benchmark", "^GSPC")
 
+    def _to_yf_ticker(self, ticker: str, session=None) -> str:
+        """DB 티커를 yfinance 티커로 변환 (한국 종목 지원)"""
+        if ticker.startswith("^") or "." in ticker:
+            return ticker  # 이미 yfinance 형식
+        if session:
+            stock = session.query(Stock).filter_by(ticker=ticker).first()
+            if stock and stock.index_membership in ("KOSPI", "KOSDAQ"):
+                suffix = ".KS" if stock.index_membership == "KOSPI" else ".KQ"
+                return ticker + suffix
+        # 숫자로만 된 6자리면 한국 종목
+        if ticker.isdigit() and len(ticker) == 6:
+            return ticker + ".KS"
+        return ticker
+
     def collect(self, tickers: list = None, **kwargs):
         """주가 + 기술적 지표 수집"""
         with self.db.get_session() as session:
@@ -53,7 +67,8 @@ class DynamicsCollector(BaseCollector):
                         continue
 
                     stock_id = stock.id if stock else None
-                    count = self._collect_price_and_indicators(session, ticker, stock_id)
+                    yf_ticker = self._to_yf_ticker(ticker, session)
+                    count = self._collect_price_and_indicators(session, ticker, stock_id, yf_ticker)
                     total += count
                     time.sleep(0.3)
 
@@ -62,7 +77,7 @@ class DynamicsCollector(BaseCollector):
                 self._finish_run(run, total, str(e))
                 raise
 
-    def _collect_price_and_indicators(self, session, ticker: str, stock_id: Optional[int]) -> int:
+    def _collect_price_and_indicators(self, session, ticker: str, stock_id: Optional[int], yf_symbol: str = None) -> int:
         """개별 종목 주가 + 지표 수집"""
         count = 0
         try:
@@ -70,7 +85,7 @@ class DynamicsCollector(BaseCollector):
             # 기술적 지표 계산을 위해 추가 기간 포함
             start = end - timedelta(days=self.lookback_days + 250)
 
-            yf_ticker = yf.Ticker(ticker)
+            yf_ticker = yf.Ticker(yf_symbol or ticker)
             df = yf_ticker.history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"))
 
             if df.empty:
