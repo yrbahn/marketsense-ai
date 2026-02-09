@@ -1,9 +1,8 @@
 """재무 데이터 수집기 (한국 증시 전용)
 
 한국 상장기업 재무 데이터:
-1. 재무제표 (손익계산서, 재무상태표, 현금흐름표) - yfinance 또는 KRX
-2. 공시 - DART API (향후 추가)
-3. 실적발표 - 향후 추가
+1. 재무제표 (손익계산서, 재무상태표, 현금흐름표) - DART API
+2. 공시 - DART API
 """
 import os
 import time
@@ -15,6 +14,7 @@ from datetime import datetime, date
 from typing import Dict, List, Any, Optional
 
 from .base_collector import BaseCollector
+from .dart_client import DartClient
 from src.storage.database import Database
 from src.storage.models import Stock, FinancialStatement
 
@@ -28,6 +28,19 @@ class FundamentalsCollector(BaseCollector):
         super().__init__(config, db)
         self.fund_config = config.get("fundamentals", {})
         self.quarters = self.fund_config.get("financial_statements", {}).get("quarters", 5)
+        
+        # DART API 클라이언트
+        try:
+            self.dart = DartClient()
+            self.dart_enabled = True
+            logger.info("[Fundamentals] DART API 활성화")
+        except ValueError:
+            self.dart = None
+            self.dart_enabled = False
+            logger.warning("[Fundamentals] DART API 키 없음 - DART 수집 비활성화")
+        
+        # DART 기업 고유번호 캐시
+        self.corp_code_map = {}
 
     def _to_yf_ticker(self, ticker: str, session=None) -> str:
         """DB 티커를 yfinance 티커로 변환"""
@@ -43,7 +56,7 @@ class FundamentalsCollector(BaseCollector):
         return ticker
 
     def collect(self, tickers: list = None, **kwargs):
-        """재무제표 수집 (yfinance)"""
+        """재무제표 수집 (DART API)"""
         with self.db.get_session() as session:
             run = self._start_run(session)
             total = 0
@@ -58,6 +71,11 @@ class FundamentalsCollector(BaseCollector):
 
                 logger.info(f"[Fundamentals] {len(tickers)}개 종목 재무제표 수집 시작")
 
+                # DART 고유번호 매핑 (한 번만)
+                if self.dart_enabled and not self.corp_code_map:
+                    logger.info("[Fundamentals] DART 기업 고유번호 매핑 중...")
+                    self.corp_code_map = self.dart.get_corp_code_list()
+
                 for idx, ticker in enumerate(tickers):
                     if idx > 0 and idx % 100 == 0:
                         logger.info(f"[Fundamentals] 진행: {idx}/{len(tickers)} ({total}건 수집)")
@@ -66,15 +84,16 @@ class FundamentalsCollector(BaseCollector):
                     if not stock:
                         continue
 
-                    yf_ticker = self._to_yf_ticker(ticker, session)
-                    count = self._collect_financials_yfinance(session, ticker, stock.id, yf_ticker)
-                    total += count
+                    # DART API 사용
+                    if self.dart_enabled:
+                        count = self._collect_financials_dart(session, ticker, stock.id)
+                        total += count
 
                     # 주기적으로 flush
                     if idx % 50 == 0 and idx > 0:
                         session.flush()
 
-                    time.sleep(0.3)
+                    time.sleep(0.5)  # DART API rate limit
 
                 self._finish_run(run, total)
                 logger.info(f"[Fundamentals] 총 {total}건 수집 완료")
@@ -83,6 +102,97 @@ class FundamentalsCollector(BaseCollector):
                 logger.error(f"[Fundamentals] 실패: {e}")
                 self._finish_run(run, total, str(e))
                 raise
+
+    def _collect_financials_dart(self, session, ticker: str, stock_id: int) -> int:
+        """DART API로 재무제표 수집"""
+        count = 0
+
+        # DART 고유번호 조회
+        corp_code = self.corp_code_map.get(ticker)
+        if not corp_code:
+            logger.debug(f"[DART] {ticker} 고유번호 없음")
+            return 0
+
+        try:
+            current_year = datetime.now().year
+
+            # 최근 2년 사업보고서 (연간)
+            for year in [current_year - 1, current_year - 2]:
+                raw_data = self.dart.get_financial_statements(corp_code, year, "11011")
+                if raw_data:
+                    parsed = self.dart.parse_financial_statements(raw_data)
+
+                    for stmt_type, data in parsed.items():
+                        if not data:
+                            continue
+
+                        # 중복 체크
+                        period_end = date(year, 12, 31)
+                        exists = session.query(FinancialStatement).filter_by(
+                            stock_id=stock_id,
+                            period="annual",
+                            period_end=period_end,
+                            statement_type=stmt_type,
+                        ).first()
+                        if exists:
+                            continue
+
+                        stmt = FinancialStatement(
+                            stock_id=stock_id,
+                            period="annual",
+                            period_end=period_end,
+                            statement_type=stmt_type,
+                            data=data,
+                            currency="KRW",
+                        )
+                        session.add(stmt)
+                        count += 1
+
+                time.sleep(0.3)
+
+            # 최근 분기보고서 (1분기, 3분기)
+            for report_code, quarter in [("11013", "Q1"), ("11014", "Q3")]:
+                raw_data = self.dart.get_financial_statements(
+                    corp_code, current_year, report_code
+                )
+                if raw_data:
+                    parsed = self.dart.parse_financial_statements(raw_data)
+
+                    for stmt_type, data in parsed.items():
+                        if not data:
+                            continue
+
+                        # 분기 종료일 추정
+                        q_month = 3 if quarter == "Q1" else 9
+                        period_end = date(current_year, q_month, 30)
+
+                        exists = session.query(FinancialStatement).filter_by(
+                            stock_id=stock_id,
+                            period="quarterly",
+                            period_end=period_end,
+                            statement_type=stmt_type,
+                        ).first()
+                        if exists:
+                            continue
+
+                        stmt = FinancialStatement(
+                            stock_id=stock_id,
+                            period="quarterly",
+                            period_end=period_end,
+                            fiscal_quarter=quarter,
+                            statement_type=stmt_type,
+                            data=data,
+                            currency="KRW",
+                        )
+                        session.add(stmt)
+                        count += 1
+
+                time.sleep(0.3)
+
+        except Exception as e:
+            logger.debug(f"[DART] {ticker} 실패: {e}")
+
+        return count
 
     def _collect_financials_yfinance(self, session, ticker: str, stock_id: int, yf_symbol: str) -> int:
         """yfinance로 재무제표 수집"""
