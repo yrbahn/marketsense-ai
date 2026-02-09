@@ -27,6 +27,17 @@ from src.storage.models import Stock, PriceData, TechnicalIndicator
 logger = logging.getLogger("marketsense")
 
 
+def to_python_type(value):
+    """numpy 타입을 Python 기본 타입으로 변환 (PostgreSQL 호환)"""
+    if value is None or pd.isna(value):
+        return None
+    if isinstance(value, (np.integer, np.floating)):
+        return float(value)
+    if isinstance(value, np.bool_):
+        return bool(value)
+    return value
+
+
 class DynamicsCollector(BaseCollector):
     """주가 & 기술적 지표 수집기"""
 
@@ -111,13 +122,13 @@ class DynamicsCollector(BaseCollector):
                         price = PriceData(
                             stock_id=stock_id,
                             date=row_date,
-                            open=row.get("Open"),
-                            high=row.get("High"),
-                            low=row.get("Low"),
-                            close=row.get("Close"),
-                            volume=row.get("Volume"),
-                            dividend=row.get("Dividends", 0),
-                            stock_split=row.get("Stock Splits", 0),
+                            open=to_python_type(row.get("Open")),
+                            high=to_python_type(row.get("High")),
+                            low=to_python_type(row.get("Low")),
+                            close=to_python_type(row.get("Close")),
+                            volume=to_python_type(row.get("Volume")),
+                            dividend=to_python_type(row.get("Dividends", 0)),
+                            stock_split=to_python_type(row.get("Stock Splits", 0)),
                         )
                         session.add(price)
                         count += 1
@@ -130,22 +141,22 @@ class DynamicsCollector(BaseCollector):
                         ti = TechnicalIndicator(
                             stock_id=stock_id,
                             date=row_date,
-                            sma_20=row.get("sma_20"),
-                            sma_50=row.get("sma_50"),
-                            sma_200=row.get("sma_200"),
-                            rsi_14=row.get("rsi_14"),
-                            macd=row.get("macd"),
-                            macd_signal=row.get("macd_signal"),
-                            macd_hist=row.get("macd_hist"),
-                            bb_upper=row.get("bb_upper"),
-                            bb_middle=row.get("bb_middle"),
-                            bb_lower=row.get("bb_lower"),
-                            atr_14=row.get("atr_14"),
-                            volume_sma_20=row.get("volume_sma_20"),
-                            daily_return=row.get("daily_return"),
-                            volatility_20d=row.get("volatility_20d"),
-                            sharpe_ratio_20d=row.get("sharpe_20d"),
-                            max_drawdown_20d=row.get("mdd_20d"),
+                            sma_20=to_python_type(row.get("sma_20")),
+                            sma_50=to_python_type(row.get("sma_50")),
+                            sma_200=to_python_type(row.get("sma_200")),
+                            rsi_14=to_python_type(row.get("rsi_14")),
+                            macd=to_python_type(row.get("macd")),
+                            macd_signal=to_python_type(row.get("macd_signal")),
+                            macd_hist=to_python_type(row.get("macd_hist")),
+                            bb_upper=to_python_type(row.get("bb_upper")),
+                            bb_middle=to_python_type(row.get("bb_middle")),
+                            bb_lower=to_python_type(row.get("bb_lower")),
+                            atr_14=to_python_type(row.get("atr_14")),
+                            volume_sma_20=to_python_type(row.get("volume_sma_20")),
+                            daily_return=to_python_type(row.get("daily_return")),
+                            volatility_20d=to_python_type(row.get("volatility_20d")),
+                            sharpe_ratio_20d=to_python_type(row.get("sharpe_20d")),
+                            max_drawdown_20d=to_python_type(row.get("mdd_20d")),
                         )
                         session.add(ti)
                         count += 1
