@@ -42,22 +42,108 @@ class NewsCollector(BaseCollector):
                 if not tickers:
                     tickers = [s.ticker for s in session.query(Stock).filter_by(is_active=True).all()]
 
-                for source_cfg in self.news_config.get("sources", []):
-                    source_name = source_cfg["name"]
-                    if source_name == "finnhub":
-                        count = self._collect_finnhub(session, tickers)
-                    elif source_name == "newsapi":
-                        count = self._collect_newsapi(session, tickers)
-                    elif source_name == "rss_feeds":
-                        count = self._collect_rss(session, source_cfg.get("feeds", []))
-                    else:
-                        continue
-                    total += count
+                # 한국 종목 감지 (6자리 숫자)
+                kr_tickers = [t for t in tickers if t.isdigit() and len(t) == 6]
+                us_tickers = [t for t in tickers if t not in kr_tickers]
+
+                # 한국 종목: 네이버 금융 뉴스
+                if kr_tickers:
+                    total += self._collect_naver_finance(session, kr_tickers)
+
+                # 미국 종목: 기존 소스
+                if us_tickers:
+                    for source_cfg in self.news_config.get("sources", []):
+                        source_name = source_cfg["name"]
+                        if source_name == "finnhub":
+                            total += self._collect_finnhub(session, us_tickers)
+                        elif source_name == "newsapi":
+                            total += self._collect_newsapi(session, us_tickers)
+                        elif source_name == "rss_feeds":
+                            total += self._collect_rss(session, source_cfg.get("feeds", []))
 
                 self._finish_run(run, total)
             except Exception as e:
                 self._finish_run(run, total, str(e))
                 raise
+
+    # ─────────────────────────────────────
+    # Google News RSS (한국 종목)
+    # ─────────────────────────────────────
+    def _collect_naver_finance(self, session, tickers: List[str]) -> int:
+        """Google News RSS로 한국 종목 뉴스 수집"""
+        count = 0
+        total_tickers = len(tickers)
+
+        # 종목명 매핑
+        ticker_names = {}
+        for t in tickers:
+            stock = session.query(Stock).filter_by(ticker=t).first()
+            if stock:
+                ticker_names[t] = stock.name
+
+        for idx, ticker in enumerate(tickers):
+            if idx % 50 == 0:
+                logger.info(f"[GoogleNews] 진행: {idx}/{total_tickers} ({count}건 수집)")
+
+            stock = session.query(Stock).filter_by(ticker=ticker).first()
+            stock_id = stock.id if stock else None
+            stock_name = ticker_names.get(ticker, ticker)
+
+            try:
+                # Google News RSS 검색
+                query = f"{stock_name}+주가"
+                rss_url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
+                feed = feedparser.parse(rss_url)
+
+                cutoff = datetime.now() - timedelta(days=self.lookback_days)
+
+                for entry in feed.entries[:self.max_articles]:
+                    url = entry.get("link", "")
+                    title = entry.get("title", "")
+                    if not url or not title:
+                        continue
+
+                    # 날짜 파싱
+                    pub_at = None
+                    if hasattr(entry, "published_parsed") and entry.published_parsed:
+                        pub_at = datetime(*entry.published_parsed[:6])
+                        if pub_at < cutoff:
+                            continue
+
+                    # 중복 체크
+                    exists = session.query(NewsArticle).filter_by(url=url).first()
+                    if exists:
+                        continue
+
+                    # 소스 추출 (제목에서 " - 매일경제" 부분)
+                    source_name = ""
+                    if " - " in title:
+                        parts = title.rsplit(" - ", 1)
+                        title = parts[0]
+                        source_name = parts[1] if len(parts) > 1 else ""
+
+                    news = NewsArticle(
+                        stock_id=stock_id,
+                        ticker=ticker,
+                        title=title,
+                        url=url,
+                        source="google_news",
+                        author=source_name,
+                        published_at=pub_at,
+                        category="finance",
+                        related_tickers=[ticker],
+                    )
+                    session.add(news)
+                    count += 1
+
+                time.sleep(0.5)  # Rate limit
+
+            except Exception as e:
+                logger.debug(f"[GoogleNews] {ticker} ({stock_name}) 실패: {e}")
+                continue
+
+        logger.info(f"[GoogleNews] 총 {count}건 수집 완료")
+        return count
 
     # ─────────────────────────────────────
     # Finnhub API
