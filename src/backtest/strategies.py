@@ -9,6 +9,7 @@ from typing import Dict, Optional
 
 from src.storage.database import Database
 from src.storage.models import Stock, PriceData, TechnicalIndicator
+from src.backtest.ai_strategy import ai_signal_strategy, simple_ai_signal_strategy
 
 
 class TradingStrategy:
@@ -239,8 +240,12 @@ def momentum_strategy(
     return 'hold'
 
 
+from .ai_strategy import ai_signal_strategy
+
+
 # 전략 매핑
 STRATEGIES = {
+    'ai_signal': ai_signal_strategy,
     'sma_crossover': sma_crossover_strategy,
     'rsi': rsi_strategy,
     'macd': macd_strategy,
