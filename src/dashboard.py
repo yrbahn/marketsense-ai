@@ -207,10 +207,10 @@ def render_fundamentals(session):
             df = pd.DataFrame([{
                 "유형": s.statement_type,
                 "기간": s.period_end,
-                "매출": f"${s.revenue/1e9:.1f}B" if s.revenue else "N/A",
-                "순이익": f"${s.net_income/1e9:.1f}B" if s.net_income else "N/A",
-                "영업이익": f"${s.operating_income/1e9:.1f}B" if s.operating_income else "N/A",
-                "EPS": f"${s.eps:.2f}" if s.eps else "N/A",
+                "매출": f"{s.raw_data.get('매출액', 0)/1e12:.1f}조원" if s.raw_data and s.raw_data.get('매출액') else "N/A",
+                "순이익": f"{s.raw_data.get('당기순이익', 0)/1e12:.1f}조원" if s.raw_data and s.raw_data.get('당기순이익') else "N/A",
+                "영업이익": f"{s.raw_data.get('영업이익', 0)/1e12:.1f}조원" if s.raw_data and s.raw_data.get('영업이익') else "N/A",
+                "자산총계": f"{s.raw_data.get('자산총계', 0)/1e12:.1f}조원" if s.raw_data and s.raw_data.get('자산총계') else "N/A",
             } for s in stmts])
             st.dataframe(df, use_container_width=True)
         else:
