@@ -86,7 +86,7 @@ class DartClient:
             return {}
 
     def get_financial_statements(
-        self, corp_code: str, year: int, report_code: str = "11011"
+        self, corp_code: str, year: int, report_code: str = "11011", fs_div: str = "CFS"
     ) -> List[Dict]:
         """재무제표 조회
 
@@ -98,50 +98,39 @@ class DartClient:
                 - 11012: 반기보고서
                 - 11013: 1분기보고서
                 - 11014: 3분기보고서
+            fs_div: 재무제표 구분
+                - CFS: 연결재무제표 (기본)
+                - OFS: 개별재무제표
         """
         endpoint = "fnlttSinglAcntAll.json"
         params = {
             "corp_code": corp_code,
             "bsns_year": str(year),
             "reprt_code": report_code,
+            "fs_div": fs_div,
         }
 
         data = self._get(endpoint, params)
         return data.get("list", [])
 
-    def parse_financial_statements(self, raw_data: List[Dict]) -> Dict[str, Dict]:
+    def parse_financial_statements(self, raw_data: List[Dict]) -> Dict:
         """재무제표 데이터 파싱
 
         Returns:
-            {
-                "income_statement": {...},
-                "balance_sheet": {...},
-                "cash_flow": {...}
-            }
+            {계정명: 금액, ...}
         """
-        result = {
-            "income_statement": {},
-            "balance_sheet": {},
-            "cash_flow": {},
-        }
-
-        # 재무제표 구분
-        fs_map = {
-            "IS": "income_statement",  # 손익계산서
-            "BS": "balance_sheet",  # 재무상태표
-            "CF": "cash_flow",  # 현금흐름표
-        }
+        result = {}
 
         for item in raw_data:
-            fs_div = item.get("sj_div")  # 재무제표 구분
             account_nm = item.get("account_nm")  # 계정명
             thstrm_amount = item.get("thstrm_amount")  # 당기금액
 
-            if fs_div in fs_map and account_nm and thstrm_amount:
+            if account_nm and thstrm_amount:
                 try:
-                    # 금액 파싱 (쉼표 제거)
-                    amount = float(thstrm_amount.replace(",", ""))
-                    result[fs_map[fs_div]][account_nm] = amount
+                    # 금액 파싱 (쉼표 제거, 빈 문자열 처리)
+                    if thstrm_amount.strip() and thstrm_amount.strip() != "-":
+                        amount = float(thstrm_amount.replace(",", ""))
+                        result[account_nm] = amount
                 except (ValueError, AttributeError):
                     continue
 

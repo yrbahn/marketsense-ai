@@ -139,7 +139,8 @@ class FundamentalsCollector(BaseCollector):
                                 period_type="annual",
                                 period_end=period_end,
                                 statement_type="consolidated",
-                                raw_data=parsed,
+                                data=parsed,
+                                currency="KRW",
                             )
                             session.add(stmt)
                             count += 1
@@ -174,7 +175,8 @@ class FundamentalsCollector(BaseCollector):
                                 period_end=period_end,
                                 fiscal_quarter=quarter,
                                 statement_type="consolidated",
-                                raw_data=parsed,
+                                data=parsed,
+                                currency="KRW",
                             )
                             session.add(stmt)
                             count += 1
@@ -182,9 +184,7 @@ class FundamentalsCollector(BaseCollector):
                 time.sleep(0.5)
 
         except Exception as e:
-            import traceback
-            logger.error(f"[DART] {ticker} 실패: {e}")
-            logger.error(traceback.format_exc())
+            logger.debug(f"[DART] {ticker} 실패: {e}")
 
         return count
 
@@ -231,6 +231,7 @@ class FundamentalsCollector(BaseCollector):
                         period_end=period_end,
                         statement_type=statement_type,
                         data=data_dict,
+                        currency="KRW",
                     )
                     session.add(stmt)
                     count += 1

@@ -140,6 +140,7 @@ class FundamentalsCollector(BaseCollector):
                                 period_end=period_end,
                                 statement_type="consolidated",
                                 raw_data=parsed,
+                                currency="KRW",
                             )
                             session.add(stmt)
                             count += 1
@@ -175,6 +176,7 @@ class FundamentalsCollector(BaseCollector):
                                 fiscal_quarter=quarter,
                                 statement_type="consolidated",
                                 raw_data=parsed,
+                                currency="KRW",
                             )
                             session.add(stmt)
                             count += 1
@@ -231,6 +233,7 @@ class FundamentalsCollector(BaseCollector):
                         period_end=period_end,
                         statement_type=statement_type,
                         data=data_dict,
+                        currency="KRW",
                     )
                     session.add(stmt)
                     count += 1
