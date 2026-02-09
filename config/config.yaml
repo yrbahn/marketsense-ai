@@ -6,8 +6,8 @@ database:
   echo: false
 
 llm:
-  provider: openai
-  model: gpt-4o
+  provider: google  # google (Gemini)
+  gemini_model: gemini-flash-latest
   temperature: 0.2
   max_tokens: 4096
 
