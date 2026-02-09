@@ -1,113 +1,102 @@
 #!/usr/bin/env python3
 """
-한국 증시 (코스피) 종목 유니버스 초기화
+한국 증시 전체 종목 유니버스 초기화 (KRX 공식 데이터)
 
 Usage:
-  python3 -m src.init_krx              # 코스피 시총 Top 30
-  python3 -m src.init_krx --top 50     # Top 50
+  python3 -m src.init_krx                     # 코스피+코스닥 전체
+  python3 -m src.init_krx --market KOSPI      # 코스피만
+  python3 -m src.init_krx --market KOSDAQ     # 코스닥만
 """
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import argparse
+import io
+import requests
+import pandas as pd
+
 from src.storage.database import init_db
 from src.storage.models import Stock
 from src.utils.helpers import load_config
 
+HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
 
-# 코스피 시가총액 Top 50 (2025년 기준)
-KOSPI_TOP_STOCKS = [
-    ("005930", "삼성전자", "Technology"),
-    ("000660", "SK하이닉스", "Technology"),
-    ("373220", "LG에너지솔루션", "Industrials"),
-    ("207940", "삼성바이오로직스", "Healthcare"),
-    ("005380", "현대차", "Consumer Cyclical"),
-    ("000270", "기아", "Consumer Cyclical"),
-    ("006400", "삼성SDI", "Technology"),
-    ("051910", "LG화학", "Basic Materials"),
-    ("035420", "NAVER", "Communication Services"),
-    ("035720", "카카오", "Communication Services"),
-    ("105560", "KB금융", "Financial Services"),
-    ("055550", "신한지주", "Financial Services"),
-    ("096770", "SK이노베이션", "Energy"),
-    ("003670", "포스코홀딩스", "Basic Materials"),
-    ("028260", "삼성물산", "Industrials"),
-    ("034730", "SK", "Industrials"),
-    ("032830", "삼성생명", "Financial Services"),
-    ("003550", "LG", "Industrials"),
-    ("066570", "LG전자", "Consumer Cyclical"),
-    ("012330", "현대모비스", "Consumer Cyclical"),
-    ("086790", "하나금융지주", "Financial Services"),
-    ("015760", "한국전력", "Utilities"),
-    ("017670", "SK텔레콤", "Communication Services"),
-    ("030200", "KT", "Communication Services"),
-    ("009150", "삼성전기", "Technology"),
-    ("018260", "삼성에스디에스", "Technology"),
-    ("316140", "우리금융지주", "Financial Services"),
-    ("033780", "KT&G", "Consumer Defensive"),
-    ("010130", "고려아연", "Basic Materials"),
-    ("011170", "롯데케미칼", "Basic Materials"),
-    ("034020", "두산에너빌리티", "Industrials"),
-    ("009540", "한국조선해양", "Industrials"),
-    ("010950", "S-Oil", "Energy"),
-    ("024110", "기업은행", "Financial Services"),
-    ("011200", "HMM", "Industrials"),
-    ("138040", "메리츠금융지주", "Financial Services"),
-    ("000810", "삼성화재", "Financial Services"),
-    ("036570", "엔씨소프트", "Communication Services"),
-    ("003490", "대한항공", "Industrials"),
-    ("004020", "현대제철", "Basic Materials"),
-    ("047050", "포스코인터내셔널", "Basic Materials"),
-    ("259960", "크래프톤", "Communication Services"),
-    ("352820", "하이브", "Communication Services"),
-    ("090430", "아모레퍼시픽", "Consumer Defensive"),
-    ("068270", "셀트리온", "Healthcare"),
-    ("011790", "SKC", "Basic Materials"),
-    ("088980", "맥쿼리인프라", "Financial Services"),
-    ("161390", "한국타이어앤테크놀로지", "Consumer Cyclical"),
-    ("004490", "세방전지", "Industrials"),
-    ("009830", "한화솔루션", "Technology"),
-]
+KRX_URLS = {
+    "KOSPI": "https://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13&marketType=stockMkt",
+    "KOSDAQ": "https://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13&marketType=kosdaqMkt",
+}
 
 
-def init_krx_universe(config, top_n: int = 30):
+def fetch_krx_stocks(market: str) -> pd.DataFrame:
+    """KRX 공식 상장법인목록 다운로드"""
+    url = KRX_URLS.get(market)
+    if not url:
+        return pd.DataFrame()
+
+    print(f"📡 [{market}] KRX 상장법인목록 다운로드 중...")
+    resp = requests.get(url, headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+
+    df = pd.read_html(io.BytesIO(resp.content))[0]
+    df["종목코드"] = df["종목코드"].astype(str).str.zfill(6)
+    df = df[df["종목코드"].str.match(r"^\d{6}$")]
+    df["market"] = market
+
+    print(f"  ✅ [{market}] {len(df)}종목")
+    return df
+
+
+def init_krx_universe(config, market: str = "ALL"):
     """KRX 종목 유니버스 DB 초기화"""
     db = init_db(config)
-    stocks_data = KOSPI_TOP_STOCKS[:top_n]
 
-    print(f"📈 코스피 시가총액 Top {top_n} 종목 초기화 중...")
+    markets = ["KOSPI", "KOSDAQ"] if market == "ALL" else [market]
+    frames = []
+    for mkt in markets:
+        df = fetch_krx_stocks(mkt)
+        if not df.empty:
+            frames.append(df)
+
+    if not frames:
+        print("❌ 종목 데이터를 가져올 수 없습니다.")
+        return
+
+    all_stocks = pd.concat(frames, ignore_index=True)
 
     with db.get_session() as session:
         added = 0
-        for ticker, name, sector in stocks_data:
+        skipped = 0
+        for _, row in all_stocks.iterrows():
+            ticker = row["종목코드"]
             exists = session.query(Stock).filter_by(ticker=ticker).first()
             if exists:
-                print(f"  ⏭️  {ticker} {name} (이미 존재)")
+                skipped += 1
                 continue
 
             stock_obj = Stock(
                 ticker=ticker,
-                name=name,
-                sector=sector,
-                index_membership="KOSPI",
+                name=row["회사명"],
+                industry=row.get("업종", ""),
+                index_membership=row["market"],
                 is_active=True,
             )
             session.add(stock_obj)
             added += 1
-            print(f"  ✅ {ticker} {name} [{sector}]")
 
-    print(f"\n🎉 {added}개 종목 추가 완료!")
+        print(f"\n💾 DB 저장: {added}개 신규, {skipped}개 기존")
+
+    print(f"🎉 총 {len(all_stocks)}종목 처리 완료!")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="KRX 종목 유니버스 초기화")
+    parser = argparse.ArgumentParser(description="KRX 전체 종목 유니버스 초기화")
     parser.add_argument("--config", default="config/config.yaml")
-    parser.add_argument("--top", type=int, default=30, help="상위 N개 종목")
+    parser.add_argument("--market", default="ALL", choices=["ALL", "KOSPI", "KOSDAQ"])
     args = parser.parse_args()
 
     config = load_config(args.config)
-    init_krx_universe(config, args.top)
+    init_krx_universe(config, args.market)
 
 
 if __name__ == "__main__":
