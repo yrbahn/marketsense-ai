@@ -9,7 +9,7 @@ from typing import Dict, Optional
 
 from src.storage.database import Database
 from src.storage.models import Stock, PriceData, TechnicalIndicator
-from src.backtest.ai_strategy import ai_signal_strategy, simple_ai_signal_strategy
+from src.backtest.ai_strategy import ai_signal_strategy
 
 
 class TradingStrategy:
