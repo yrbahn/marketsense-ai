@@ -1,8 +1,8 @@
 # MarketSenseAI 2.0 - 한국 증시 전용 설정
 
 database:
-  url: "sqlite:///data/marketsense.db"
-  # PostgreSQL: "postgresql://user:pass@localhost:5432/marketsense"
+  url: "postgresql://yrbahn@localhost:5432/marketsense"
+  # SQLite: "sqlite:///data/marketsense.db"
   echo: false
 
 llm:
