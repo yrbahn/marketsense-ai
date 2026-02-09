@@ -73,19 +73,21 @@ class FundamentalsAgent(BaseAgent):
                 stmt_type = stmt.statement_type
                 financials_text.append(f"\n[{period}] {stmt_type}:")
 
-                if stmt.data:
-                    # 주요 항목만 추출
+                if stmt.raw_data:
+                    # 주요 항목만 추출 (한국어 계정명)
                     key_items = [
-                        "Total Revenue",
-                        "Net Income",
-                        "Total Assets",
-                        "Total Liabilities",
-                        "Operating Cash Flow",
+                        "자산총계",
+                        "매출액", 
+                        "영업이익",
+                        "당기순이익",
+                        "부채총계",
+                        "자본총계",
+                        "영업활동현금흐름",
                     ]
                     for key in key_items:
-                        if key in stmt.data and stmt.data[key] is not None:
-                            value = stmt.data[key]
-                            financials_text.append(f"  - {key}: {value:,.0f} {stmt.currency}")
+                        if key in stmt.raw_data and stmt.raw_data[key] is not None:
+                            value = stmt.raw_data[key]
+                            financials_text.append(f"  - {key}: {value:,.0f}원")
 
             # Gemini로 분석
             prompt = f"""{self.SYSTEM_PROMPT}
