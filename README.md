@@ -1,8 +1,9 @@
-# 📊 MarketSenseAI 2.0 - Data Collection Pipeline
+# 📊 MarketSenseAI 2.0 - 한국 증시 데이터 수집 파이프라인
 
-> **논문 기반 구현**: [MarketSenseAI 2.0: Enhancing Stock Analysis through LLM Agents](https://arxiv.org/abs/2502.00415)
+> **논문 기반 구현**: [MarketSenseAI 2.0: Enhancing Stock Analysis through LLM Agents](https://arxiv.org/abs/2502.00415)  
+> **한국 증시 전용**: KOSPI + KOSDAQ 2,625종목
 
-MarketSenseAI의 5개 LLM 에이전트(News, Fundamentals, Dynamics, Macro, Signal)를 위한 **데이터 수집 파이프라인**입니다. 수집된 raw 데이터를 관계형 데이터베이스에 체계적으로 저장합니다.
+MarketSenseAI의 5개 LLM 에이전트(News, Fundamentals, Dynamics, Macro, Signal)를 위한 **데이터 수집 파이프라인**입니다. 한국 상장기업의 raw 데이터를 관계형 데이터베이스에 체계적으로 저장합니다.
 
 ## 🏗️ 아키텍처
 
@@ -15,12 +16,12 @@ MarketSenseAI의 5개 LLM 에이전트(News, Fundamentals, Dynamics, Macro, Sign
 │  │ News        │  │ Fundamentals     │  │ Dynamics         │  │
 │  │ Collector   │  │ Collector        │  │ Collector        │  │
 │  ├─────────────┤  ├──────────────────┤  ├──────────────────┤  │
-│  │ • Finnhub   │  │ • yfinance       │  │ • yfinance OHLCV │  │
-│  │ • NewsAPI   │  │   (재무제표)      │  │ • SMA/RSI/MACD  │  │
-│  │ • RSS feeds │  │ • SEC EDGAR      │  │ • Bollinger/ATR  │  │
-│  │             │  │   (10-K, 10-Q)   │  │ • Vol/Sharpe/MDD │  │
-│  │             │  │ • RapidAPI       │  │ • Benchmark 비교  │  │
-│  │             │  │   (Earnings Call) │  │                  │  │
+│  │ • 네이버증권 │  │ • yfinance       │  │ • yfinance OHLCV │  │
+│  │   모바일API  │  │   (재무제표)      │  │ • SMA/RSI/MACD  │  │
+│  │             │  │ • DART (향후)    │  │ • Bollinger/ATR  │  │
+│  │             │  │                  │  │ • Vol/Sharpe/MDD │  │
+│  │             │  │                  │  │ • 코스피 벤치마크 │  │
+│  │             │  │                  │  │                  │  │
 │  └──────┬──────┘  └────────┬─────────┘  └────────┬─────────┘  │
 │         │                  │                      │            │
 │  ┌──────┴──────────────────┴──────────────────────┴─────────┐  │
@@ -42,12 +43,12 @@ MarketSenseAI의 5개 LLM 에이전트(News, Fundamentals, Dynamics, Macro, Sign
 │  ┌──────────────────┐                                          │
 │  │ Macro Collector   │                                         │
 │  ├──────────────────┤                                          │
-│  │ • FRED API       │                                          │
-│  │ • IMF DataMapper │                                          │
-│  │ • Fed RSS        │                                          │
-│  │ • ECB RSS        │                                          │
-│  │ • BlackRock/     │                                          │
-│  │   JPMorgan 리서치 │                                          │
+│  │ • 한국은행 RSS    │                                          │
+│  │ • BOK ECOS API   │                                          │
+│  │   (경제통계)      │                                          │
+│  │                  │                                          │
+│  │                  │                                          │
+│  │                  │                                          │
 │  └──────────────────┘                                          │
 └────────────────────────────────────────────────────────────────┘
 ```

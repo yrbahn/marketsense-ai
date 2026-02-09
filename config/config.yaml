@@ -1,4 +1,4 @@
-# MarketSenseAI 2.0 - Data Pipeline Configuration
+# MarketSenseAI 2.0 - 한국 증시 전용 설정
 
 database:
   url: "sqlite:///data/marketsense.db"
@@ -12,45 +12,29 @@ llm:
   max_tokens: 4096
 
 # ═══════════════════════════════════════════
-# 1. News Agent Data Sources
+# 1. 뉴스 데이터 소스 (한국)
 # ═══════════════════════════════════════════
 news:
   sources:
-    - name: finnhub
+    - name: naver_stock
       type: api
-      api_key_env: FINNHUB_API_KEY
-      base_url: "https://finnhub.io/api/v1"
-    - name: newsapi
-      type: api
-      api_key_env: NEWSAPI_KEY
-      base_url: "https://newsapi.org/v2"
-    - name: rss_feeds
-      type: rss
-      feeds:
-        - "https://feeds.finance.yahoo.com/rss/2.0/headline"
-        - "https://www.cnbc.com/id/100003114/device/rss/rss.html"
-        - "https://feeds.reuters.com/reuters/businessNews"
-  lookback_days: 7
-  max_articles_per_stock: 50
+      base_url: "https://m.stock.naver.com/api/news/stock"
+  lookback_days: 30
+  max_articles_per_stock: 20
 
 # ═══════════════════════════════════════════
-# 2. Fundamentals Agent Data Sources
+# 2. 재무제표 데이터 소스 (한국)
 # ═══════════════════════════════════════════
 fundamentals:
-  sec_filings:
-    enabled: true
-    filing_types: ["10-K", "10-Q"]
-    quarters_lookback: 5
-  earnings_calls:
-    enabled: true
-    provider: rapidapi  # or seekingalpha
-    api_key_env: RAPIDAPI_KEY
+  dart_filings:
+    enabled: false  # 향후 DART API 추가 예정
+    api_key_env: DART_API_KEY
   financial_statements:
     provider: yfinance
-    quarters: 5
+    quarters: 8  # 2년치
 
 # ═══════════════════════════════════════════
-# 3. Dynamics Agent Data Sources
+# 3. 주가/기술지표 데이터 소스 (한국)
 # ═══════════════════════════════════════════
 dynamics:
   price_source: yfinance
@@ -63,56 +47,49 @@ dynamics:
     - macd
     - bollinger_bands
     - atr_14
+    - volume_sma_20
   peer_comparison: true
-  benchmark: "^GSPC"  # S&P 500
+  benchmark: "^KS11"  # KOSPI 지수
 
 # ═══════════════════════════════════════════
-# 4. Macroeconomic Agent Data Sources
+# 4. 매크로 경제 데이터 소스 (한국)
 # ═══════════════════════════════════════════
 macro:
   sources:
-    - name: fred
-      type: api
-      api_key_env: FRED_API_KEY
-      series:
-        - "GDP"
-        - "CPIAUCSL"
-        - "FEDFUNDS"
-        - "UNRATE"
-        - "DGS10"
-        - "T10Y2Y"
-        - "VIXCLS"
-    - name: imf
-      type: api
-      base_url: "https://www.imf.org/external/datamapper/api/v1"
-    - name: fed_speeches
+    - name: bok_rss
       type: rss
-      url: "https://www.federalreserve.gov/feeds/speeches.xml"
-    - name: ecb_publications
-      type: rss
-      url: "https://www.ecb.europa.eu/rss/press.html"
-    - name: institutional_reports
-      type: scraper
-      sources:
-        - "blackrock"
-        - "jpmorgan"
-        - "goldman"
+      url: "https://www.bok.or.kr/portal/bbs/B0000245/rss.do"
+    - name: bok_api
+      type: api
+      api_key_env: BOK_API_KEY
+      base_url: "https://ecos.bok.or.kr/api"
+      indicators:
+        - code: "722Y001"
+          name: "GDP_growth"
+        - code: "901Y009"
+          name: "CPI_inflation"
+        - code: "722Y003"
+          name: "unemployment"
+        - code: "817Y002"
+          name: "base_rate"
   report_cache_dir: "./data/macro_reports"
 
 # ═══════════════════════════════════════════
-# Target Stock Universe
+# 종목 유니버스 (한국 증시)
 # ═══════════════════════════════════════════
 universe:
-  index: "SP500"  # SP100, SP500, or custom
-  # custom_tickers: ["AAPL", "MSFT", "GOOGL"]
+  markets:
+    - KOSPI
+    - KOSDAQ
+  # top_n: 100  # 시총 상위 N개 (optional)
 
 # ═══════════════════════════════════════════
-# Pipeline Schedule
+# 수집 스케줄
 # ═══════════════════════════════════════════
 schedule:
-  news: "0 */6 * * *"       # 6시간마다
+  news: "0 */6 * * *"        # 6시간마다
   fundamentals: "0 2 * * 1"  # 매주 월요일 02:00
-  dynamics: "0 18 * * 1-5"   # 장 마감 후
+  dynamics: "0 16 * * 1-5"   # 장 마감 후 (15:30 종가 + 30분 버퍼)
   macro: "0 3 * * 1"         # 매주 월요일 03:00
 
 logging:
