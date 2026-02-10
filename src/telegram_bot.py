@@ -6,6 +6,7 @@
 import sys
 import logging
 import re
+import os
 from typing import Optional, Dict, List
 from dotenv import load_dotenv
 
@@ -271,22 +272,59 @@ class TelegramBot:
             else:
                 fund_detail = f"• 밸류에이션: {fund_result.get('valuation', 'N/A')}\n• 요약: {fund_result.get('summary', '데이터 없음')[:100]}..."
             
-            # 모든 분석을 한 메시지로 통합하여 사용자에게 반환
-            response_parts = []
+            # 각 에이전트 분석을 개별 메시지로 사용자에게 전송
+            # 사용자 chat_id 가져오기
+            user_chat_id = os.getenv("TELEGRAM_USER_CHAT_ID")
+            
+            if not user_chat_id:
+                # chat_id 없으면 한 메시지로 통합 반환 (fallback)
+                response_parts = []
+                response_parts.append(f"🤖 **AI 종합 분석**\n\n**종목**: {name} ({ticker})\n\n━━━━━━━━━━━━━━━━━━━━━━")
+                
+                if news_result and not news_result.get('error'):
+                    response_parts.append(f"📰 **뉴스**\n\n{news_result.get('summary', '데이터 없음')}")
+                
+                if fund_result and not fund_result.get('error'):
+                    valuation_info = "N/A"
+                    if isinstance(fund_result.get('valuation'), dict):
+                        val = fund_result['valuation']
+                        valuation_kr = {'undervalued': '저평가', 'fair': '적정', 'overvalued': '고평가'}
+                        valuation_info = valuation_kr.get(val.get('rating'), val.get('rating', 'N/A'))
+                    else:
+                        valuation_kr = {'undervalued': '저평가', 'fair': '적정', 'overvalued': '고평가'}
+                        valuation_info = valuation_kr.get(fund_result.get('valuation'), fund_result.get('valuation', 'N/A'))
+                    response_parts.append(f"💰 **펀더멘털** ({valuation_info})\n\n{fund_result.get('summary', '데이터 없음')}")
+                
+                if dyn_result and not dyn_result.get('error'):
+                    trend_kr = {'uptrend': '상승', 'downtrend': '하락', 'sideways': '횡보'}
+                    response_parts.append(f"📈 **기술적/수급** ({trend_kr.get(dyn_result.get('trend'), 'N/A')})\n\n{dyn_result.get('summary', '데이터 없음')}")
+                
+                macro_result = results.get('macro')
+                if macro_result and not macro_result.get('error'):
+                    response_parts.append(f"🌍 **거시경제** (점수: {macro_result.get('macro_score', 0)})\n\n{macro_result.get('summary', '데이터 없음')}")
+                
+                response_parts.append(f"━━━━━━━━━━━━━━━━━━━━━━\n\n🎯 **CIO 최종 의견**\n\n**신호**: {signal_kr.get(signal_result.get('signal'), signal_result.get('signal'))}\n**확신도**: {signal_result.get('confidence', 0)*100:.0f}%\n\n{signal_result.get('summary', 'N/A')}\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n⏰ {signal_result.get('analyzed_at', '')}\n\n_※ AI 분석은 참고용이며, 실제 투자는 본인 판단으로 하세요._")
+                
+                return '\n\n'.join(response_parts)
             
             # 1. 헤더
-            response_parts.append(f"""🤖 **AI 종합 분석**
+            header_msg = f"""🤖 **AI 종합 분석**
 
 **종목**: {name} ({ticker})
 
-━━━━━━━━━━━━━━━━━━━━━━""")
+━━━━━━━━━━━━━━━━━━━━━━
+분석을 시작합니다..."""
+            self.notifier.send_to_user(user_chat_id, header_msg)
             
             # 2. 뉴스 분석
             if news_result and not news_result.get('error'):
                 news_summary = news_result.get('summary', '데이터 없음')
-                response_parts.append(f"""📰 **뉴스**
+                news_msg = f"""📰 **뉴스 애널리스트 분석**
 
-{news_summary}""")
+{news_summary}"""
+                self.notifier.send_to_user(user_chat_id, news_msg)
+            else:
+                self.notifier.send_to_user(user_chat_id, "📰 **뉴스 애널리스트 분석**\n\n데이터 없음")
             
             # 3. 재무 분석
             if fund_result and not fund_result.get('error'):
@@ -300,49 +338,61 @@ class TelegramBot:
                     valuation_kr = {'undervalued': '저평가', 'fair': '적정', 'overvalued': '고평가'}
                     valuation_info = valuation_kr.get(fund_result.get('valuation'), fund_result.get('valuation', 'N/A'))
                 
-                response_parts.append(f"""💰 **펀더멘털** ({valuation_info})
+                fund_msg = f"""💰 **펀더멘털 애널리스트 분석**
 
-{fund_summary}""")
+**밸류에이션**: {valuation_info}
+
+{fund_summary}"""
+                self.notifier.send_to_user(user_chat_id, fund_msg)
+            else:
+                self.notifier.send_to_user(user_chat_id, "💰 **펀더멘털 애널리스트 분석**\n\n데이터 없음")
             
             # 4. 기술적 분석
             if dyn_result and not dyn_result.get('error'):
                 dyn_summary = dyn_result.get('summary', '데이터 없음')
                 trend_kr = {'uptrend': '상승', 'downtrend': '하락', 'sideways': '횡보'}
                 
-                response_parts.append(f"""📈 **기술적/수급** ({trend_kr.get(dyn_result.get('trend'), 'N/A')})
+                dyn_msg = f"""📈 **기술적/수급 애널리스트 분석**
 
-{dyn_summary}""")
+**추세**: {trend_kr.get(dyn_result.get('trend'), 'N/A')}
+
+{dyn_summary}"""
+                self.notifier.send_to_user(user_chat_id, dyn_msg)
+            else:
+                self.notifier.send_to_user(user_chat_id, "📈 **기술적/수급 애널리스트 분석**\n\n데이터 없음")
             
             # 5. 거시경제 분석
             macro_result = results.get('macro')
             if macro_result and not macro_result.get('error'):
                 macro_summary = macro_result.get('summary', '데이터 없음')
                 
-                response_parts.append(f"""🌍 **거시경제** (점수: {macro_result.get('macro_score', 0)})
+                macro_msg = f"""🌍 **거시경제 애널리스트 분석**
 
-{macro_summary}""")
-            
-            response_parts.append("━━━━━━━━━━━━━━━━━━━━━━")
+**거시경제 점수**: {macro_result.get('macro_score', 0)}
+
+{macro_summary}"""
+                self.notifier.send_to_user(user_chat_id, macro_msg)
+            else:
+                self.notifier.send_to_user(user_chat_id, "🌍 **거시경제 애널리스트 분석**\n\n데이터 없음")
             
             # 6. 최종 투자 신호 (CIO)
             signal_summary = signal_result.get('summary', 'N/A')
-            response_parts.append(f"""🎯 **CIO 최종 의견**
+            signal_msg = f"""🎯 **CIO 최종 투자 의견**
 
 **신호**: {signal_kr.get(signal_result.get('signal'), signal_result.get('signal'))}
 **확신도**: {signal_result.get('confidence', 0)*100:.0f}%
 
-{signal_summary}""")
-            
-            response_parts.append(f"""━━━━━━━━━━━━━━━━━━━━━━
+{signal_summary}
+
+━━━━━━━━━━━━━━━━━━━━━━
 
 ⏰ {signal_result.get('analyzed_at', '')}
 
-_※ AI 분석은 참고용이며, 실제 투자는 본인 판단으로 하세요._""")
+_※ AI 분석은 참고용이며, 실제 투자는 본인 판단으로 하세요._"""
+            self.notifier.send_to_user(user_chat_id, signal_msg)
             
-            # 전체 조합하여 사용자에게 반환
-            response = '\n\n'.join(response_parts)
-            
-            return response
+            # 완료 메시지 반환 (NO_REPLY로 중복 방지)
+            return "NO_REPLY"
             
         except Exception as e:
             logger.error(f"분석 오류: {e}")

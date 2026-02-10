@@ -83,6 +83,47 @@ class TelegramNotifier:
             # 오류 시 콘솔 출력
             print(f"\n[알림 메시지]\n{message}\n")
             return False
+    
+    def send_to_user(self, chat_id: str, message: str, silent: bool = False) -> bool:
+        """특정 사용자에게 메시지 전송
+        
+        Args:
+            chat_id: 텔레그램 chat ID
+            message: 전송할 메시지
+            silent: 무음 알림 여부
+            
+        Returns:
+            성공 여부
+        """
+        try:
+            # OpenClaw CLI로 메시지 전송
+            cmd = ["openclaw", "message", "send", "--target", chat_id]
+            
+            # 무음 알림
+            if silent:
+                cmd.append("--silent")
+            
+            # 메시지 추가
+            cmd.extend(["--message", message])
+            
+            # 실행
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+            
+            if result.returncode == 0:
+                logger.info(f"[Telegram] 사용자({chat_id}) 전송 성공")
+                return True
+            else:
+                logger.error(f"[Telegram] 사용자({chat_id}) 전송 실패: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"[Telegram] 사용자({chat_id}) 전송 오류: {e}")
+            return False
 
     def send_signal_alert(self, ticker: str, stock_name: str, signal: str, 
                          confidence: float, reasons: dict) -> bool:
