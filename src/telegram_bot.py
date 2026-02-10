@@ -134,43 +134,24 @@ class TelegramBot:
         ticker = stock['ticker']
         name = stock['name']
         
-        # 4개 에이전트 분석 실행
-        from src.agents import NewsAgent, FundamentalsAgent, DynamicsAgent, MacroAgent, SignalAgent
-        
-        results = {}
+        # SignalAgent로 4개 에이전트 병렬 실행 + 통합
+        from src.agents import SignalAgent
         
         try:
-            # 1. 뉴스 분석
-            logger.info(f"[NewsAgent] {ticker} 분석 시작")
-            agent = NewsAgent(self.config, self.db)
-            results['news'] = agent.analyze(ticker)
+            # SignalAgent.analyze()가 4개 에이전트를 병렬로 실행하고 통합합니다
+            logger.info(f"[SignalAgent] {ticker} 종합 분석 시작 (4개 에이전트 병렬)")
+            signal_agent = SignalAgent(self.config, self.db)
+            full_result = signal_agent.analyze(ticker)
             
-            # 2. 재무 분석
-            logger.info(f"[FundamentalsAgent] {ticker} 분석 시작")
-            agent = FundamentalsAgent(self.config, self.db)
-            results['fundamentals'] = agent.analyze(ticker)
-            
-            # 3. 기술적 분석
-            logger.info(f"[DynamicsAgent] {ticker} 분석 시작")
-            agent = DynamicsAgent(self.config, self.db)
-            results['dynamics'] = agent.analyze(ticker)
-            
-            # 4. 거시경제 분석 (스킵 - 데이터 미비)
-            # logger.info(f"[MacroAgent] 분석 시작")
-            # agent = MacroAgent(self.config, self.db)
-            # results['macro'] = agent.analyze()
-            results['macro'] = None
-            
-            # 5. 최종 통합
-            logger.info(f"[SignalAgent] {ticker} 통합 시작")
-            agent = SignalAgent(self.config, self.db)
-            results['signal'] = agent.aggregate(
-                ticker,
-                news_result=results.get('news'),
-                fundamentals_result=results.get('fundamentals'),
-                dynamics_result=results.get('dynamics'),
-                macro_result=results.get('macro')
-            )
+            # 각 에이전트 결과 추출
+            agent_results = full_result.get('agent_results', {})
+            results = {
+                'news': agent_results.get('news', {}),
+                'fundamentals': agent_results.get('fundamentals', {}),
+                'dynamics': agent_results.get('dynamics', {}),
+                'macro': agent_results.get('macro', {}),
+                'signal': full_result
+            }
             
             # 결과 포맷팅
             signal_kr = {'BUY': '매수', 'SELL': '매도', 'HOLD': '보유'}
