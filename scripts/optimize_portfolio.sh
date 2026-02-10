@@ -10,15 +10,15 @@ export $(grep -v '^#' .env | xargs)
 
 echo "[$(date)] 포트폴리오 최적화 시작"
 
-# 포트폴리오 최적화 실행 (상위 50개 종목)
+# 포트폴리오 최적화 실행 (상위 200개 종목)
 OUTPUT_FILE="cache/portfolio_$(date +%Y%m%d).json"
 
 /Library/Developer/CommandLineTools/usr/bin/python3 -m src.optimize_portfolio \
-    --top 50 \
+    --top 200 \
     --method max_sharpe \
     --lookback 252 \
-    --min-weight 0.02 \
-    --max-weight 0.15 \
+    --min-weight 0.005 \
+    --max-weight 0.05 \
     --output "$OUTPUT_FILE"
 
 echo "[$(date)] 포트폴리오 최적화 완료"
