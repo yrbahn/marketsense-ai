@@ -450,20 +450,67 @@ class FundamentalsAgent(BaseAgent):
     낙관적: {fair_20:,.0f}원
 """
             
-            # 증권사 리포트 (최근 5개)
+            # 증권사 리포트 (RAG 검색 또는 SQL)
             from src.storage.models import ResearchReport
-            
-            reports = (
-                session.query(ResearchReport)
-                .filter(ResearchReport.stock_id == stock.id)
-                .order_by(ResearchReport.report_date.desc())
-                .limit(5)
-                .all()
-            )
+            from datetime import timedelta
             
             report_text = ""
+            use_rag = True
+            
+            if use_rag:
+                try:
+                    from src.rag.vector_store import VectorStore
+                    
+                    # RAG 검색 (주제별)
+                    vs = VectorStore()
+                    
+                    rag_results = vs.search_reports(
+                        query=f"{stock.name} 목표주가 밸류에이션 실적 전망",
+                        ticker=ticker,
+                        top_k=20  # 많이 가져옴
+                    )
+                    
+                    # RAG 결과를 DB 객체로 매핑하고 시간 필터링
+                    if rag_results:
+                        cutoff = datetime.now().date() - timedelta(days=90)  # 최근 3개월
+                        rag_ids = [r['id'].replace('report_', '') for r in rag_results if r['id'].startswith('report_')]
+                        
+                        reports = (
+                            session.query(ResearchReport)
+                            .filter(
+                                ResearchReport.id.in_([int(i) for i in rag_ids if i.isdigit()]),
+                                ResearchReport.report_date >= cutoff
+                            )
+                            .order_by(ResearchReport.report_date.desc())
+                            .limit(5)
+                            .all()
+                        )
+                        
+                        logger.info(f"[FundamentalsAgent] RAG 검색: {len(reports)}개 리포트 (최근 90일)")
+                    else:
+                        reports = []
+                    
+                    if not reports:
+                        logger.warning(f"[FundamentalsAgent] RAG 결과 없음, SQL fallback")
+                        use_rag = False
+                
+                except Exception as e:
+                    logger.warning(f"[FundamentalsAgent] RAG 실패 ({e}), SQL fallback")
+                    use_rag = False
+            
+            if not use_rag:
+                # Fallback: SQL (최신순)
+                reports = (
+                    session.query(ResearchReport)
+                    .filter(ResearchReport.stock_id == stock.id)
+                    .order_by(ResearchReport.report_date.desc())
+                    .limit(5)
+                    .all()
+                )
+                logger.info(f"[FundamentalsAgent] SQL 검색: {len(reports)}개 리포트")
+            
             if reports:
-                report_text = "\n\n증권사 리포트 (최근 5개):\n"
+                report_text = "\n\n증권사 리포트 (최근 5개, RAG 검색):\n"
                 for r in reports:
                     report_text += f"\n  [{r.report_date}] {r.firm}:\n"
                     report_text += f"    - {r.title}\n"

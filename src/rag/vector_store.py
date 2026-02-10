@@ -61,6 +61,28 @@ class VectorStore:
                 metadata={"description": "Financial statements"}
             )
             logger.info("새 재무 컬렉션 생성")
+        
+        # 공시 컬렉션
+        try:
+            self.disclosures_collection = self.client.get_collection("disclosures")
+            logger.info("기존 공시 컬렉션 로드")
+        except:
+            self.disclosures_collection = self.client.create_collection(
+                name="disclosures",
+                metadata={"description": "Corporate disclosures"}
+            )
+            logger.info("새 공시 컬렉션 생성")
+        
+        # 리포트 컬렉션
+        try:
+            self.reports_collection = self.client.get_collection("reports")
+            logger.info("기존 리포트 컬렉션 로드")
+        except:
+            self.reports_collection = self.client.create_collection(
+                name="reports",
+                metadata={"description": "Research reports"}
+            )
+            logger.info("새 리포트 컬렉션 생성")
     
     def add_news(self, articles: List[Dict[str, Any]]):
         """뉴스 추가
@@ -247,15 +269,186 @@ class VectorStore:
         
         return fin_items
     
+    def add_disclosures(self, disclosures: List[Dict[str, Any]]):
+        """공시 추가
+        
+        Args:
+            disclosures: 공시 리스트
+                [{'id': str, 'stock_id': int, 'ticker': str, 'report_nm': str, 
+                  'rcept_dt': date, 'disclosure_type': str, ...}]
+        """
+        if not disclosures:
+            return
+        
+        ids = []
+        documents = []
+        metadatas = []
+        
+        for disc in disclosures:
+            # ID
+            disc_id = f"disc_{disc['id']}"
+            ids.append(disc_id)
+            
+            # 문서 (보고서명)
+            text = f"{disc.get('disclosure_type', '')} {disc.get('report_nm', '')}"
+            documents.append(text)
+            
+            # 메타데이터
+            metadata = {
+                'ticker': disc.get('ticker', ''),
+                'disclosure_type': disc.get('disclosure_type', ''),
+                'rcept_dt': str(disc.get('rcept_dt', ''))
+            }
+            metadatas.append(metadata)
+        
+        # 임베딩
+        logger.info(f"공시 {len(documents)}개 임베딩 중...")
+        embeddings = self.embedding_model.encode(documents, show_progress_bar=True).tolist()
+        
+        # 추가
+        self.disclosures_collection.add(
+            ids=ids,
+            embeddings=embeddings,
+            documents=documents,
+            metadatas=metadatas
+        )
+        
+        logger.info(f"공시 {len(disclosures)}개 벡터화 완료")
+    
+    def add_reports(self, reports: List[Dict[str, Any]]):
+        """리포트 추가
+        
+        Args:
+            reports: 리포트 리스트
+                [{'id': str, 'stock_id': int, 'ticker': str, 'title': str, 
+                  'firm': str, 'report_date': date, ...}]
+        """
+        if not reports:
+            return
+        
+        ids = []
+        documents = []
+        metadatas = []
+        
+        for report in reports:
+            # ID
+            report_id = f"report_{report['id']}"
+            ids.append(report_id)
+            
+            # 문서 (증권사 + 제목)
+            text = f"{report.get('firm', '')} {report.get('title', '')}"
+            documents.append(text)
+            
+            # 메타데이터
+            metadata = {
+                'ticker': report.get('ticker', ''),
+                'firm': report.get('firm', ''),
+                'report_date': str(report.get('report_date', ''))
+            }
+            metadatas.append(metadata)
+        
+        # 임베딩
+        logger.info(f"리포트 {len(documents)}개 임베딩 중...")
+        embeddings = self.embedding_model.encode(documents, show_progress_bar=True).tolist()
+        
+        # 추가
+        self.reports_collection.add(
+            ids=ids,
+            embeddings=embeddings,
+            documents=documents,
+            metadatas=metadatas
+        )
+        
+        logger.info(f"리포트 {len(reports)}개 벡터화 완료")
+    
+    def search_disclosures(
+        self,
+        query: str,
+        ticker: Optional[str] = None,
+        top_k: int = 10
+    ) -> List[Dict]:
+        """공시 검색
+        
+        Args:
+            query: 검색 쿼리
+            ticker: 종목 코드 (필터링)
+            top_k: 반환 개수
+            
+        Returns:
+            관련 공시 리스트
+        """
+        query_embedding = self.embedding_model.encode([query]).tolist()[0]
+        
+        where = {"ticker": ticker} if ticker else None
+        
+        results = self.disclosures_collection.query(
+            query_embeddings=[query_embedding],
+            n_results=top_k,
+            where=where
+        )
+        
+        items = []
+        if results['ids']:
+            for i in range(len(results['ids'][0])):
+                items.append({
+                    'id': results['ids'][0][i],
+                    'text': results['documents'][0][i],
+                    'metadata': results['metadatas'][0][i],
+                    'distance': results['distances'][0][i] if 'distances' in results else None
+                })
+        
+        return items
+    
+    def search_reports(
+        self,
+        query: str,
+        ticker: Optional[str] = None,
+        top_k: int = 10
+    ) -> List[Dict]:
+        """리포트 검색
+        
+        Args:
+            query: 검색 쿼리
+            ticker: 종목 코드 (필터링)
+            top_k: 반환 개수
+            
+        Returns:
+            관련 리포트 리스트
+        """
+        query_embedding = self.embedding_model.encode([query]).tolist()[0]
+        
+        where = {"ticker": ticker} if ticker else None
+        
+        results = self.reports_collection.query(
+            query_embeddings=[query_embedding],
+            n_results=top_k,
+            where=where
+        )
+        
+        items = []
+        if results['ids']:
+            for i in range(len(results['ids'][0])):
+                items.append({
+                    'id': results['ids'][0][i],
+                    'text': results['documents'][0][i],
+                    'metadata': results['metadatas'][0][i],
+                    'distance': results['distances'][0][i] if 'distances' in results else None
+                })
+        
+        return items
+    
     def get_stats(self) -> Dict:
         """통계 조회
         
         Returns:
-            {'news_count': int, 'financials_count': int}
+            {'news_count': int, 'financials_count': int, 
+             'disclosures_count': int, 'reports_count': int}
         """
         return {
             'news_count': self.news_collection.count(),
-            'financials_count': self.financials_collection.count()
+            'financials_count': self.financials_collection.count(),
+            'disclosures_count': self.disclosures_collection.count(),
+            'reports_count': self.reports_collection.count()
         }
 
 
