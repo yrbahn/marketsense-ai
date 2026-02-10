@@ -7,6 +7,10 @@ import sys
 import logging
 import re
 from typing import Optional, Dict, List
+from dotenv import load_dotenv
+
+# .env 파일 로드 (최우선)
+load_dotenv()
 
 from src.storage.database import init_db
 from src.storage.models import Stock
