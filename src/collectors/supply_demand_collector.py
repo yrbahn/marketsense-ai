@@ -1,14 +1,15 @@
 """수급 데이터 수집기
 
-거래량, 외국인 보유율 등 수급 지표 수집
+거래량, 외국인 보유율, 투자자별 매매 등 수급 지표 수집
 
 데이터 소스:
 - 거래량: 네이버 증권 API
 - 외국인 보유율: 네이버 증권 API
+- 투자자별 매매: 한국투자증권 OpenAPI (개인/외국인/기관 순매수)
 
 TODO:
-- 공매도: KRX API 또는 크롤링
-- 신용잔고: KRX API 또는 크롤링
+- 공매도: KIS API 미제공
+- 신용잔고: KIS API 미제공
 """
 import logging
 import time
@@ -49,13 +50,16 @@ class SupplyDemandCollector(BaseCollector):
                         logger.info(f"[SupplyDemand] 진행: {idx}/{len(tickers)} ({total}건)")
                     
                     try:
-                        # 거래량 및 외국인 보유율 (네이버)
-                        investor_count = self._collect_investor_trading(session, ticker)
+                        # 1. 거래량 및 외국인 보유율 (네이버)
+                        naver_count = self._collect_naver_data(session, ticker)
                         
-                        total += investor_count
+                        # 2. 투자자별 매매 (KIS API)
+                        kis_count = self._collect_kis_investor_trading(session, ticker)
+                        
+                        total += (naver_count + kis_count)
                         
                         # Rate limit
-                        time.sleep(0.1)
+                        time.sleep(0.2)
                         
                     except Exception as e:
                         logger.debug(f"[SupplyDemand] {ticker} 실패: {e}")
@@ -68,10 +72,85 @@ class SupplyDemandCollector(BaseCollector):
                 self._finish_run(run, total, str(e))
                 raise
     
-    # TODO: 공매도 및 신용잔고 데이터 수집
-    # 향후 KRX API 또는 크롤링으로 구현 예정
+    def _collect_kis_investor_trading(self, session, ticker: str) -> int:
+        """투자자별 매매 (한국투자증권 OpenAPI)"""
+        count = 0
+        
+        try:
+            from src.utils.kis_api import KISApi
+            
+            stock = session.query(Stock).filter_by(ticker=ticker).first()
+            if not stock:
+                return 0
+            
+            # KIS API 초기화
+            try:
+                api = KISApi()
+            except ValueError:
+                # API 키가 없으면 skip
+                return 0
+            
+            # 최근 lookback_days 동안의 투자자별 매매
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=self.lookback_days)
+            
+            # KIS API로 투자자별 매매 조회
+            data_list = api.get_investor_trading(
+                ticker,
+                start_date.strftime('%Y%m%d'),
+                end_date.strftime('%Y%m%d')
+            )
+            
+            if not data_list:
+                return 0
+            
+            for item in data_list:
+                date_str = item.get('stck_bsop_date')
+                if not date_str:
+                    continue
+                
+                try:
+                    trade_date = datetime.strptime(date_str, '%Y%m%d').date()
+                except:
+                    continue
+                
+                # 기존 레코드 조회 또는 생성
+                supply_demand = session.query(SupplyDemandData).filter_by(
+                    stock_id=stock.id,
+                    date=trade_date
+                ).first()
+                
+                if not supply_demand:
+                    supply_demand = SupplyDemandData(
+                        stock_id=stock.id,
+                        date=trade_date
+                    )
+                    session.add(supply_demand)
+                
+                # 투자자별 순매수 저장
+                # prsn_ntby_qty: 개인 순매수 수량
+                # frgn_ntby_qty: 외국인 순매수 수량
+                # orgn_ntby_qty: 기관 순매수 수량
+                
+                if 'prsn_ntby_qty' in item:
+                    supply_demand.individual_net_buy = float(item.get('prsn_ntby_qty', 0))
+                
+                if 'frgn_ntby_qty' in item:
+                    supply_demand.foreign_net_buy = float(item.get('frgn_ntby_qty', 0))
+                
+                if 'orgn_ntby_qty' in item:
+                    supply_demand.institution_net_buy = float(item.get('orgn_ntby_qty', 0))
+                
+                count += 1
+            
+            session.flush()
+            
+        except Exception as e:
+            logger.debug(f"[KIS] {ticker} 투자자 매매 수집 실패: {e}")
+        
+        return count
 
-    def _collect_investor_trading(self, session, ticker: str) -> int:
+    def _collect_naver_data(self, session, ticker: str) -> int:
         """거래량 및 외국인 보유비중 (네이버 증권 API)"""
         count = 0
         

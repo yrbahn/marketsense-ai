@@ -7,10 +7,12 @@ References:
 - https://github.com/koreainvestment/open-trading-api
 """
 import os
+import json
 import logging
 import requests
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional, Dict, List
 
 logger = logging.getLogger("marketsense")
@@ -40,12 +42,59 @@ class KISApi:
         
         self.base_url = self.MOCK_URL if self.mock else self.BASE_URL
         self.access_token = None
+        self.token_file = Path(__file__).parent.parent.parent / "cache" / "kis_token.json"
+        
+    def _load_cached_token(self) -> Optional[str]:
+        """캐시된 토큰 로드"""
+        if not self.token_file.exists():
+            return None
+        
+        try:
+            with open(self.token_file, 'r') as f:
+                data = json.load(f)
+            
+            # 만료 시간 확인 (24시간)
+            expires_at = datetime.fromisoformat(data.get('expires_at'))
+            if datetime.now() < expires_at:
+                logger.info("[KIS] 캐시된 토큰 사용")
+                return data.get('access_token')
+            else:
+                logger.info("[KIS] 토큰 만료, 재발급 필요")
+                return None
+                
+        except Exception as e:
+            logger.debug(f"[KIS] 캐시 로드 실패: {e}")
+            return None
+    
+    def _save_token(self, token: str):
+        """토큰 캐시 저장"""
+        try:
+            self.token_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            data = {
+                'access_token': token,
+                'expires_at': (datetime.now() + timedelta(hours=23)).isoformat()
+            }
+            
+            with open(self.token_file, 'w') as f:
+                json.dump(data, f)
+                
+        except Exception as e:
+            logger.debug(f"[KIS] 토큰 캐시 저장 실패: {e}")
         
     def _get_access_token(self) -> str:
-        """접근 토큰 발급"""
+        """접근 토큰 발급 (캐싱)"""
+        # 메모리 캐시 확인
         if self.access_token:
             return self.access_token
         
+        # 파일 캐시 확인
+        cached_token = self._load_cached_token()
+        if cached_token:
+            self.access_token = cached_token
+            return self.access_token
+        
+        # 새로 발급
         url = f"{self.base_url}/oauth2/tokenP"
         headers = {"content-type": "application/json"}
         data = {
@@ -60,6 +109,10 @@ class KISApi:
             if resp.status_code == 200:
                 result = resp.json()
                 self.access_token = result.get("access_token")
+                
+                # 캐시 저장
+                self._save_token(self.access_token)
+                
                 logger.info("[KIS] 접근 토큰 발급 완료")
                 return self.access_token
             else:
@@ -82,26 +135,42 @@ class KISApi:
             "tr_id": tr_id
         }
     
-    def get_shorting_balance(self, date: str = None) -> Optional[List[Dict]]:
-        """공매도 잔고 조회
+    def get_stock_price(self, ticker: str) -> Optional[Dict]:
+        """주식 현재가 조회
         
         Args:
-            date: YYYYMMDD 형식 (기본값: 오늘)
+            ticker: 종목코드 (6자리)
         
         Returns:
-            List of dicts with shorting balance info
+            Dict with price info
         """
-        # KIS API 공매도 조회 TR 코드 확인 필요
-        # 예시 코드 (실제 TR 코드는 문서 확인 필요)
+        url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-price"
         
-        if not date:
-            date = datetime.now().strftime("%Y%m%d")
+        headers = self._get_headers("FHKST01010100")
         
-        # TODO: KIS API 문서에서 공매도 조회 TR 코드 확인
-        # 예: FHKST03030100 (가정)
+        params = {
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_INPUT_ISCD": ticker
+        }
         
-        logger.warning("[KIS] 공매도 잔고 조회 API는 문서 확인이 필요합니다")
-        return None
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=10)
+            
+            if resp.status_code == 200:
+                result = resp.json()
+                
+                if result.get("rt_cd") == "0":
+                    return result.get("output")
+                else:
+                    logger.warning(f"[KIS] 현재가 조회 오류: {result.get('msg1')}")
+                    return None
+            else:
+                logger.error(f"[KIS] API 호출 실패: {resp.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"[KIS] 현재가 조회 오류: {e}")
+            return None
     
     def get_investor_trading(self, ticker: str, start_date: str, end_date: str = None) -> Optional[List[Dict]]:
         """투자자별 매매동향 조회
@@ -113,19 +182,20 @@ class KISApi:
         
         Returns:
             List of dicts with investor trading info
+            필드: prsn_ntby_qty, frgn_ntby_qty, orgn_ntby_qty (개인/외국인/기관 순매수)
         """
         if not end_date:
             end_date = start_date
         
         # KIS API: 국내주식 투자자별 매매동향
-        # TR ID: FHKST01010900 (예시, 문서 확인 필요)
+        # TR ID: FHKST01010900
         
         url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-investor"
         
         headers = self._get_headers("FHKST01010900")
         
         params = {
-            "FID_COND_MRKT_DIV_CODE": "J",  # 주식
+            "FID_COND_MRKT_DIV_CODE": "J",
             "FID_INPUT_ISCD": ticker,
             "FID_INPUT_DATE_1": start_date,
             "FID_INPUT_DATE_2": end_date,
@@ -140,6 +210,51 @@ class KISApi:
                 
                 if result.get("rt_cd") == "0":
                     return result.get("output", [])
+                else:
+                    logger.warning(f"[KIS] API 응답 오류: {result.get('msg1')}")
+                    return None
+            else:
+                logger.error(f"[KIS] API 호출 실패: {resp.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"[KIS] 투자자 매매동향 조회 오류: {e}")
+            return None
+    
+    def get_investor_trend_daily(self, ticker: str, days: int = 30) -> Optional[List[Dict]]:
+        """투자자별 매매동향 조회 (기간)
+        
+        Args:
+            ticker: 종목코드 (6자리)
+            days: 조회 일수 (기본값: 30일)
+        
+        Returns:
+            List of dicts with daily investor trading
+        """
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice"
+        
+        headers = self._get_headers("FHKST03010100")
+        
+        params = {
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_INPUT_ISCD": ticker,
+            "FID_INPUT_DATE_1": start_date.strftime("%Y%m%d"),
+            "FID_INPUT_DATE_2": end_date.strftime("%Y%m%d"),
+            "FID_PERIOD_DIV_CODE": "D",
+            "FID_ORG_ADJ_PRC": "0"
+        }
+        
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=10)
+            
+            if resp.status_code == 200:
+                result = resp.json()
+                
+                if result.get("rt_cd") == "0":
+                    return result.get("output2", [])
                 else:
                     logger.warning(f"[KIS] API 응답 오류: {result.get('msg1')}")
                     return None
