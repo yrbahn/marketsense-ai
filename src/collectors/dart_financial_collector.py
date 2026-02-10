@@ -239,35 +239,36 @@ class DartFinancialCollector:
             limit: 수집할 종목 수 제한 (None = 전체)
             skip_existing: 이미 데이터가 있는 종목 건너뛰기
         """
+        # 종목 리스트 가져오기 (ticker, id만)
         with db.get_session() as session:
-            query = session.query(Stock)
+            query = session.query(Stock.ticker, Stock.id, Stock.name)
             
             if limit:
                 query = query.limit(limit)
             
-            stocks = query.all()
-            total = len(stocks)
+            stock_list = [(ticker, stock_id, name) for ticker, stock_id, name in query.all()]
+            total = len(stock_list)
         
         logger.info(f"총 {total}개 종목 재무제표 수집 시작...")
         
         collected_stocks = 0
         collected_quarters = 0
         
-        for i, stock in enumerate(stocks):
+        for i, (ticker, stock_id, name) in enumerate(stock_list):
             # 이미 데이터 있는지 확인
             if skip_existing:
                 with db.get_session() as session:
                     existing_count = session.query(FinancialStatement).filter(
-                        FinancialStatement.stock_id == stock.id,
+                        FinancialStatement.stock_id == stock_id,
                         FinancialStatement.source == 'opendartreader'
                     ).count()
                     
                     if existing_count >= 4:
-                        logger.debug(f"[{stock.ticker}] 이미 {existing_count}개 분기 데이터 존재, 스킵")
+                        logger.debug(f"[{ticker}] 이미 {existing_count}개 분기 데이터 존재, 스킵")
                         continue
             
             # 수집
-            count = self.collect_stock_financials(db, stock.ticker, stock.id)
+            count = self.collect_stock_financials(db, ticker, stock_id)
             
             if count > 0:
                 collected_stocks += 1
