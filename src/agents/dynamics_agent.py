@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
 from .base_agent import BaseAgent
-from src.storage.models import Stock, PriceData, TechnicalIndicator
+from src.storage.models import Stock, PriceData, TechnicalIndicator, SupplyDemandData
 
 logger = logging.getLogger("marketsense")
 
@@ -183,6 +183,29 @@ class DynamicsAgent(BaseAgent):
             volume_text += f"  10일 평균: {avg_volume:,.0f}주\n"
             volume_text += f"  평균 대비: {volume_change:+.1f}%\n"
 
+            # 수급 데이터 조회
+            supply_demand_text = ""
+            supply_demand_data = (
+                session.query(SupplyDemandData)
+                .filter(SupplyDemandData.stock_id == stock.id)
+                .order_by(SupplyDemandData.date.desc())
+                .limit(10)
+                .all()
+            )
+            
+            if supply_demand_data:
+                supply_demand_text = "\n수급 분석 (최근 10일):\n"
+                for sd in supply_demand_data[:10]:
+                    date_str = sd.date.strftime('%Y-%m-%d')
+                    foreign_text = f"{sd.foreign_ownership:.2f}%" if sd.foreign_ownership else "N/A"
+                    supply_demand_text += f"  {date_str}: 외국인보유 {foreign_text}, "
+                    supply_demand_text += f"거래량 {sd.volume:,}주\n" if sd.volume else "거래량 N/A\n"
+                
+                # 최근 외국인 보유 변화
+                if len(supply_demand_data) >= 2 and supply_demand_data[0].foreign_ownership and supply_demand_data[-1].foreign_ownership:
+                    foreign_change = supply_demand_data[0].foreign_ownership - supply_demand_data[-1].foreign_ownership
+                    supply_demand_text += f"\n  → 10일간 외국인보유 변화: {foreign_change:+.2f}%p\n"
+
             # 지표 요약
             indicators_text = ""
             if latest_indicators:
@@ -221,6 +244,8 @@ class DynamicsAgent(BaseAgent):
 {ma_text}
 
 {volume_text}
+
+{supply_demand_text}
 
 {indicators_text}
 

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
 from .base_agent import BaseAgent
-from src.storage.models import Stock, NewsArticle
+from src.storage.models import Stock, NewsArticle, DisclosureData
 
 logger = logging.getLogger("marketsense")
 
@@ -76,15 +76,45 @@ class NewsAgent(BaseAgent):
                 if news.summary:
                     news_texts.append(f"   요약: {news.summary[:150]}...")
 
+            # 공시 정보 조회 (최근 30일)
+            disclosure_cutoff = datetime.now() - timedelta(days=30)
+            disclosure_list = (
+                session.query(DisclosureData)
+                .filter(
+                    DisclosureData.stock_id == stock.id,
+                    DisclosureData.rcept_dt >= disclosure_cutoff.date(),
+                )
+                .order_by(DisclosureData.rcept_dt.desc())
+                .limit(10)
+                .all()
+            )
+            
+            disclosure_texts = []
+            if disclosure_list:
+                disclosure_texts.append("\n주요 공시 정보 (최근 30일):")
+                for idx, disc in enumerate(disclosure_list, 1):
+                    date_str = disc.rcept_dt.strftime("%Y-%m-%d")
+                    disclosure_texts.append(
+                        f"{idx}. [{date_str}] {disc.disclosure_type}: {disc.report_nm[:80]}"
+                    )
+
             # Gemini로 분석
             prompt = f"""{self.SYSTEM_PROMPT}
 
 종목: {stock.name} ({ticker})
-최근 {lookback_days}일 뉴스 ({len(news_list)}건):
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📰 최근 {lookback_days}일 뉴스 ({len(news_list)}건)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {chr(10).join(news_texts)}
 
-위 뉴스들을 종합 분석하여 JSON 형식으로 답변하세요.
+{chr(10).join(disclosure_texts) if disclosure_texts else ""}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+위 뉴스와 공시 정보를 종합 분석하여 JSON 형식으로 답변하세요.
+공시 정보(실적발표, 증자, 자사주 등)가 있다면 반드시 key_events에 포함시키세요.
 """
 
             try:
