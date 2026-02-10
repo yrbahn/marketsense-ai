@@ -231,7 +231,7 @@ class SignalAgent(BaseAgent):
             }
     
     def analyze(self, ticker: str) -> Dict[str, Any]:
-        """종목 종합 분석 (완전 구현)
+        """종목 종합 분석 (완전 구현 - 병렬 실행)
         
         Args:
             ticker: 종목 코드
@@ -239,85 +239,61 @@ class SignalAgent(BaseAgent):
         Returns:
             통합 분석 결과
         """
-        logger.info(f"[SignalAgent] {ticker} 종합 분석 시작")
+        logger.info(f"[SignalAgent] {ticker} 종합 분석 시작 (병렬 실행)")
         
         try:
-            # 1. MacroAgent 실행 (시장 전반 상황)
-            macro_agent = MacroAgent(self.config, self.db)
-            macro_result = macro_agent.analyze(lookback_days=90)
-            logger.debug(f"[SignalAgent] 거시경제 분석 완료")
+            from concurrent.futures import ThreadPoolExecutor, as_completed
             
-            # 2. NewsAgent 실행
-            news_agent = NewsAgent(self.config, self.db)
-            news_result = news_agent.analyze(ticker)
-            logger.debug(f"[SignalAgent] {ticker} 뉴스 분석 완료")
+            # 4개 에이전트 병렬 실행
+            def run_news():
+                agent = NewsAgent(self.config, self.db)
+                return agent.analyze(ticker)
             
-            # 3. FundamentalsAgent 실행
-            fundamentals_agent = FundamentalsAgent(self.config, self.db)
-            fundamentals_result = fundamentals_agent.analyze(ticker)
-            logger.debug(f"[SignalAgent] {ticker} 펀더멘털 분석 완료")
+            def run_fundamentals():
+                agent = FundamentalsAgent(self.config, self.db)
+                return agent.analyze(ticker)
             
-            # 4. DynamicsAgent 실행
-            dynamics_agent = DynamicsAgent(self.config, self.db)
-            dynamics_result = dynamics_agent.analyze(ticker)
-            logger.debug(f"[SignalAgent] {ticker} 기술적 분석 완료")
+            def run_dynamics():
+                agent = DynamicsAgent(self.config, self.db)
+                return agent.analyze(ticker)
             
-            # 5. 4개 에이전트 결과 통합
-            prompt = f"""{self.SYSTEM_PROMPT}
-
-종목 코드: {ticker}
-
-**거시경제 분석 (MacroAgent):**
-{macro_result.get('summary', 'N/A')}
-- 시장 전망: {macro_result.get('market_outlook', 'N/A')}
-- 리스크 수준: {macro_result.get('risk_level', 'N/A')}
-
-**뉴스 분석 (NewsAgent):**
-{news_result.get('summary', 'N/A')}
-- 감성: {news_result.get('sentiment', 'N/A')}
-- 영향: {news_result.get('impact', 'N/A')}
-
-**펀더멘털 분석 (FundamentalsAgent):**
-{fundamentals_result.get('summary', 'N/A')}
-- 밸류에이션: {fundamentals_result.get('valuation', 'N/A')}
-- 재무 건전성: {fundamentals_result.get('financial_health', 'N/A')}
-
-**기술적/수급 분석 (DynamicsAgent):**
-{dynamics_result.get('summary', 'N/A')}
-- 추세: {dynamics_result.get('trend', 'N/A')}
-- 모멘텀: {dynamics_result.get('momentum', 'N/A')}
-
-위 4개 에이전트의 분석 결과를 종합하여 최종 투자 신호를 생성하세요.
-"""
+            def run_macro():
+                agent = MacroAgent(self.config, self.db)
+                return agent.analyze(lookback_days=90)
             
-            response_text = self.generate(prompt)
-            import json
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = {
+                    executor.submit(run_news): 'news',
+                    executor.submit(run_fundamentals): 'fundamentals',
+                    executor.submit(run_dynamics): 'dynamics',
+                    executor.submit(run_macro): 'macro'
+                }
+                
+                results = {}
+                for future in as_completed(futures):
+                    agent_name = futures[future]
+                    try:
+                        results[agent_name] = future.result()
+                        logger.debug(f"[SignalAgent] {agent_name} 분석 완료")
+                    except Exception as e:
+                        logger.error(f"[SignalAgent] {agent_name} 분석 실패: {e}")
+                        results[agent_name] = {'error': str(e)}
             
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0]
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0]
+            news_result = results.get('news', {'error': 'N/A'})
+            fundamentals_result = results.get('fundamentals', {'error': 'N/A'})
+            dynamics_result = results.get('dynamics', {'error': 'N/A'})
+            macro_result = results.get('macro', {'error': 'N/A'})
             
-            result = json.loads(response_text.strip())
-            result["ticker"] = ticker
-            result["analyzed_at"] = datetime.now().isoformat()
+            logger.info(f"[SignalAgent] {ticker} 4개 에이전트 병렬 실행 완료")
             
-            # 각 에이전트 결과 포함
-            result["macro_summary"] = macro_result.get('summary', '')
-            result["macro_outlook"] = macro_result.get('market_outlook', 'N/A')
-            result["news_summary"] = news_result.get('summary', '')
-            result["news_sentiment"] = news_result.get('sentiment', 'N/A')
-            result["fundamentals_summary"] = fundamentals_result.get('summary', '')
-            result["fundamentals_valuation"] = fundamentals_result.get('valuation', 'N/A')
-            result["dynamics_summary"] = dynamics_result.get('summary', '')
-            result["dynamics_trend"] = dynamics_result.get('trend', 'N/A')
-            
-            logger.info(
-                f"[SignalAgent] {ticker} 분석 완료: {result.get('signal')} "
-                f"(신뢰도 {result.get('confidence', 0):.2f})"
+            # 5. aggregate() 메서드로 통합
+            return self.aggregate(
+                ticker=ticker,
+                news_result=news_result,
+                fundamentals_result=fundamentals_result,
+                dynamics_result=dynamics_result,
+                macro_result=macro_result
             )
-            
-            return result
             
         except Exception as e:
             logger.error(f"[SignalAgent] {ticker} 분석 실패: {e}")
