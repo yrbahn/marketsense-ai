@@ -177,6 +177,58 @@ class TelegramBot:
             fund_result = results.get('fundamentals', {})
             dyn_result = results.get('dynamics', {})
             
+            # 기술적 분석 상세 포맷팅
+            tech_detail = ""
+            if dyn_result and not dyn_result.get('error'):
+                # 추세
+                trend_kr = {'uptrend': '상승 추세', 'downtrend': '하락 추세', 'sideways': '횡보'}
+                tech_detail = f"• 추세: {trend_kr.get(dyn_result.get('trend'), dyn_result.get('trend', 'N/A'))}"
+                
+                if dyn_result.get('trend_strength'):
+                    strength_kr = {'strong': '강함', 'moderate': '보통', 'weak': '약함'}
+                    tech_detail += f" ({strength_kr.get(dyn_result.get('trend_strength'), dyn_result.get('trend_strength'))})"
+                
+                # 이동평균선
+                if dyn_result.get('moving_averages'):
+                    ma = dyn_result['moving_averages']
+                    tech_detail += f"\n• 이평선: {ma.get('ma5_vs_ma20', 'N/A')}"
+                
+                # RSI
+                if dyn_result.get('indicators', {}).get('rsi'):
+                    rsi_data = dyn_result['indicators']['rsi']
+                    rsi_status_kr = {'과매수': '과매수', '중립': '중립', '과매도': '과매도'}
+                    tech_detail += f"\n• RSI: {rsi_data.get('value', 'N/A')} ({rsi_status_kr.get(rsi_data.get('status'), rsi_data.get('status', 'N/A'))})"
+                
+                # MACD
+                if dyn_result.get('indicators', {}).get('macd'):
+                    macd_data = dyn_result['indicators']['macd']
+                    macd_signal_kr = {'매수': '매수', '매도': '매도', '중립': '중립'}
+                    tech_detail += f"\n• MACD: {macd_signal_kr.get(macd_data.get('signal'), macd_data.get('signal', 'N/A'))}"
+                
+                # 거래량
+                if dyn_result.get('indicators', {}).get('volume'):
+                    vol_data = dyn_result['indicators']['volume']
+                    vol_trend_kr = {'증가': '증가', '감소': '감소', '보합': '보합'}
+                    tech_detail += f"\n• 거래량: {vol_trend_kr.get(vol_data.get('trend'), vol_data.get('trend', 'N/A'))}"
+                
+                # 지지/저항선
+                if dyn_result.get('key_levels'):
+                    levels = dyn_result['key_levels']
+                    if levels.get('support'):
+                        supports = [f"{int(s):,}" for s in levels['support'][:2]]
+                        tech_detail += f"\n• 지지선: {', '.join(supports)}원"
+                    if levels.get('resistance'):
+                        resistances = [f"{int(r):,}" for r in levels['resistance'][:2]]
+                        tech_detail += f"\n• 저항선: {', '.join(resistances)}원"
+                
+                # 매매 전략
+                if dyn_result.get('trading_strategy'):
+                    strategy = dyn_result['trading_strategy']
+                    if strategy.get('target_price'):
+                        tech_detail += f"\n• 목표가: {strategy['target_price']}"
+            else:
+                tech_detail = "• 데이터 없음"
+            
             response = f"""🤖 **AI 종합 분석**
 
 **종목**: {name} ({ticker})
@@ -192,8 +244,7 @@ class TelegramBot:
 • 요약: {fund_result.get('summary', '데이터 없음')[:100]}...
 
 📈 **기술적 분석**
-• 추세: {dyn_result.get('trend', 'N/A')}
-• 요약: {dyn_result.get('summary', '데이터 없음')[:100]}...
+{tech_detail}
 
 ━━━━━━━━━━━━━━━━━━━━━━
 
