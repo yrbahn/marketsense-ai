@@ -142,3 +142,62 @@ class SignalAgent(BaseAgent):
                     "macro": macro_result,
                 },
             }
+    
+    def analyze(self, ticker: str) -> Dict[str, Any]:
+        """종목 종합 분석 (간소화 버전)
+        
+        Args:
+            ticker: 종목 코드
+            
+        Returns:
+            통합 분석 결과
+        """
+        logger.info(f"[SignalAgent] {ticker} 종합 분석 시작")
+        
+        # 간소화된 분석 (4개 에이전트 실행 없이 바로 신호 생성)
+        # 실제 환경에서는 4개 에이전트를 모두 실행해야 함
+        
+        prompt = f"""종목 코드 {ticker}에 대한 투자 신호를 생성하세요.
+
+현재 시장 상황을 고려하여 BUY/SELL/HOLD 중 하나를 선택하고,
+신뢰도와 리스크 수준을 평가하세요.
+
+JSON 형식으로 답변:
+{{
+  "signal": "BUY|SELL|HOLD",
+  "confidence": 0.0-1.0,
+  "risk_level": "low|medium|high",
+  "summary": "투자 의견 한 줄 요약"
+}}
+"""
+        
+        try:
+            response_text = self.generate(prompt)
+            import json
+            
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0]
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0]
+            
+            result = json.loads(response_text.strip())
+            result["ticker"] = ticker
+            result["analyzed_at"] = datetime.now().isoformat()
+            
+            logger.info(
+                f"[SignalAgent] {ticker} 분석 완료: {result.get('signal')} "
+                f"(신뢰도 {result.get('confidence', 0):.2f})"
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"[SignalAgent] {ticker} 분석 실패: {e}")
+            return {
+                "ticker": ticker,
+                "signal": "HOLD",
+                "confidence": 0.5,
+                "risk_level": "medium",
+                "summary": "분석 오류",
+                "error": str(e)
+            }
