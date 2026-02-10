@@ -421,6 +421,45 @@ class ResearchReport(Base):
 
 
 # ═══════════════════════════════════════════
+# Blog Posts (블로그 분석글)
+# ═══════════════════════════════════════════
+class BlogPost(Base):
+    """블로그 투자 분석글"""
+    __tablename__ = "blog_posts"
+    __table_args__ = (
+        UniqueConstraint("stock_id", "blog_url", name="uq_blog_post"),
+        Index("ix_blog_stock_date", "stock_id", "post_date"),
+        Index("ix_blog_blogger", "blogger_name"),
+    )
+    
+    id = Column(Integer, primary_key=True)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False, index=True)
+    
+    # 블로그 정보
+    blog_url = Column(String(500), nullable=False)     # 블로그 URL
+    blogger_name = Column(String(200))                 # 블로거명
+    post_date = Column(Date, nullable=False, index=True)  # 작성일
+    
+    # 내용
+    title = Column(String(500), nullable=False)
+    description = Column(Text)                         # 요약
+    
+    # 품질 지표
+    word_count = Column(Integer)                       # 글자 수
+    has_chart = Column(Boolean, default=False)         # 차트 포함 여부
+    
+    # 신뢰도 점수
+    quality_score = Column(Float, default=0.5)         # 0-1 점수
+    sentiment = Column(String(20))                     # positive/neutral/negative
+    
+    # 메타데이터
+    is_processed = Column(Boolean, default=False)      # AI 분석 여부
+    collected_at = Column(DateTime, default=datetime.utcnow)
+    
+    stock = relationship("Stock")
+
+
+# ═══════════════════════════════════════════
 # Pipeline Tracking
 # ═══════════════════════════════════════════
 class PipelineRun(Base):

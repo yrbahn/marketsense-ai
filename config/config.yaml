@@ -86,6 +86,17 @@ research_report:
   lookback_days: 90  # 최근 3개월
 
 # ═══════════════════════════════════════════
+# 6. 블로그 투자 분석글 (한국)
+# ═══════════════════════════════════════════
+blog:
+  sources:
+    - name: naver_blog
+      type: api
+      base_url: "https://openapi.naver.com/v1/search/blog.json"
+  lookback_days: 30  # 최근 1개월
+  min_length: 100    # 최소 글자 수 (API는 요약만 제공)
+
+# ═══════════════════════════════════════════
 # 종목 유니버스 (한국 증시)
 # ═══════════════════════════════════════════
 universe:

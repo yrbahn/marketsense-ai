@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
 from .base_agent import BaseAgent
-from src.storage.models import Stock, NewsArticle, DisclosureData
+from src.storage.models import Stock, NewsArticle, DisclosureData, BlogPost
 
 logger = logging.getLogger("marketsense")
 
@@ -98,6 +98,29 @@ class NewsAgent(BaseAgent):
                         f"{idx}. [{date_str}] {disc.disclosure_type}: {disc.report_nm[:80]}"
                     )
 
+            # 블로그 글 조회 (최근 7일)
+            blog_list = (
+                session.query(BlogPost)
+                .filter(
+                    BlogPost.stock_id == stock.id,
+                    BlogPost.post_date >= cutoff.date(),
+                )
+                .order_by(BlogPost.quality_score.desc(), BlogPost.post_date.desc())
+                .limit(10)
+                .all()
+            )
+            
+            blog_texts = []
+            if blog_list:
+                blog_texts.append("\n💬 블로그 투자 의견 (최근 7일, 개인 의견):")
+                for idx, blog in enumerate(blog_list, 1):
+                    date_str = blog.post_date.strftime("%Y-%m-%d")
+                    blog_texts.append(
+                        f"{idx}. [{date_str}] {blog.title[:60]} (by {blog.blogger_name})"
+                    )
+                    if blog.description:
+                        blog_texts.append(f"   → {blog.description[:100]}...")
+
             # Gemini로 분석
             prompt = f"""{self.SYSTEM_PROMPT}
 
@@ -111,10 +134,29 @@ class NewsAgent(BaseAgent):
 
 {chr(10).join(disclosure_texts) if disclosure_texts else ""}
 
+{chr(10).join(blog_texts) if blog_texts else ""}
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-위 뉴스와 공시 정보를 종합 분석하여 JSON 형식으로 답변하세요.
+⚠️ 분석 지침:
+
+1. **뉴스 vs 블로그 구분**:
+   - 📰 뉴스: 언론사 기사, 높은 신뢰도
+   - 💬 블로그: 개인 투자자 의견, 낮은 신뢰도
+   
+2. **블로그 분석 시 주의**:
+   - 객관적 사실과 주관적 의견 구분
+   - 과장/편향 가능성 체크
+   - 낮은 가중치로 반영 (참고용)
+   - 블로그만으로 sentiment 결정 금지
+   
+3. **우선순위**:
+   - 공시 정보 > 뉴스 > 블로그
+   - 블로그는 "시장 심리 참고용"으로만 활용
+
+위 원칙을 따라 종합 분석하여 JSON 형식으로 답변하세요.
 공시 정보(실적발표, 증자, 자사주 등)가 있다면 반드시 key_events에 포함시키세요.
+블로그 의견이 포함되었다면 reasoning에 "블로그 의견은 참고용"이라고 명시하세요.
 """
 
             try:
