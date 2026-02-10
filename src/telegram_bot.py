@@ -229,6 +229,63 @@ class TelegramBot:
             else:
                 tech_detail = "• 데이터 없음"
             
+            # 재무 분석 상세 포맷팅
+            fund_detail = ""
+            if fund_result and not fund_result.get('error'):
+                # 밸류에이션
+                valuation_kr = {'undervalued': '저평가', 'fair': '적정', 'overvalued': '고평가'}
+                if isinstance(fund_result.get('valuation'), dict):
+                    val = fund_result['valuation']
+                    fund_detail = f"• 밸류에이션: {valuation_kr.get(val.get('rating'), val.get('rating', 'N/A'))}"
+                    
+                    if val.get('vs_sector_pe'):
+                        fund_detail += f"\n• 업종 대비 P/E: {val['vs_sector_pe']}"
+                    if val.get('upside_potential'):
+                        fund_detail += f"\n• 상승여력: {val['upside_potential']}"
+                else:
+                    fund_detail = f"• 밸류에이션: {valuation_kr.get(fund_result.get('valuation'), fund_result.get('valuation', 'N/A'))}"
+                
+                # 수익성
+                if fund_result.get('profitability'):
+                    prof = fund_result['profitability']
+                    rating_kr = {'excellent': '우수', 'good': '양호', 'fair': '보통', 'poor': '부진'}
+                    fund_detail += f"\n• 수익성: {rating_kr.get(prof.get('rating'), prof.get('rating', 'N/A'))}"
+                    
+                    if prof.get('roe'):
+                        fund_detail += f" (ROE {prof['roe']:.1f}%)"
+                
+                # 성장성
+                if fund_result.get('growth'):
+                    growth = fund_result['growth']
+                    growth_kr = {'high': '높음', 'moderate': '보통', 'low': '낮음', 'negative': '마이너스'}
+                    fund_detail += f"\n• 성장성: {growth_kr.get(growth.get('rating'), growth.get('rating', 'N/A'))}"
+                    
+                    if growth.get('revenue_growth_yoy'):
+                        fund_detail += f" (매출 YoY {growth['revenue_growth_yoy']:+.1f}%)"
+                
+                # 안정성
+                if fund_result.get('stability'):
+                    stab = fund_result['stability']
+                    stab_kr = {'strong': '우수', 'moderate': '보통', 'weak': '약함', 'risky': '주의'}
+                    fund_detail += f"\n• 재무안정성: {stab_kr.get(stab.get('rating'), stab.get('rating', 'N/A'))}"
+                    
+                    if stab.get('debt_ratio'):
+                        fund_detail += f" (부채비율 {stab['debt_ratio']:.1f}%)"
+                
+                # 현금흐름
+                if fund_result.get('cash_flow'):
+                    cf = fund_result['cash_flow']
+                    cf_kr = {'strong': '우수', 'adequate': '양호', 'weak': '약함'}
+                    fund_detail += f"\n• 현금흐름: {cf_kr.get(cf.get('rating'), cf.get('rating', 'N/A'))}"
+                
+                # 투자 의견
+                if fund_result.get('investment_thesis'):
+                    thesis = fund_result['investment_thesis']
+                    if thesis.get('target_price'):
+                        fund_detail += f"\n• 목표가: {thesis['target_price']}"
+            else:
+                fund_detail = f"• 밸류에이션: {fund_result.get('valuation', 'N/A')}\n• 요약: {fund_result.get('summary', '데이터 없음')[:100]}..."
+            
             response = f"""🤖 **AI 종합 분석**
 
 **종목**: {name} ({ticker})
@@ -239,9 +296,8 @@ class TelegramBot:
 • 감성: {news_result.get('sentiment', 'N/A')}
 • 요약: {news_result.get('summary', '데이터 없음')[:100]}...
 
-💰 **재무 분석**
-• 밸류에이션: {fund_result.get('valuation', 'N/A')}
-• 요약: {fund_result.get('summary', '데이터 없음')[:100]}...
+💰 **재무 분석** ⭐
+{fund_detail}
 
 📈 **기술적 분석**
 {tech_detail}
