@@ -80,10 +80,14 @@ class RealtimeMonitor:
             
             item = area['datas'][0]
             
+            # rf: 등락 부호 (1=상한, 2=상승, 3=보합, 4=하락, 5=하한)
+            rf = item.get('rf', '3')
+            change_sign = 1 if rf in ['1', '2'] else -1 if rf in ['4', '5'] else 0
+            
             return {
                 'price': float(item.get('nv', 0)),  # 현재가
-                'change': float(item.get('cv', 0)),  # 전일대비
-                'change_rate': float(item.get('cr', 0)),  # 등락률
+                'change': float(item.get('cv', 0)) * change_sign,  # 전일대비 (부호 적용)
+                'change_rate': float(item.get('cr', 0)) * change_sign,  # 등락률 (부호 적용)
                 'volume': int(item.get('aq', 0)),  # 거래량
                 'time': datetime.now().strftime('%H:%M:%S')  # 현재 시간
             }
