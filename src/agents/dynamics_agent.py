@@ -445,27 +445,51 @@ class DynamicsAgent(BaseAgent):
 5. 지지/저항선 식별
 6. 매매 전략 (진입가, 목표가, 손절가)
 
-JSON 형식으로 상세히 답변하세요.
+**마크다운 형식**으로 상세히 작성하세요.
+
+반드시 다음 내용을 포함하되, 자유로운 형식으로 작성하십시오:
+- 추세 판단 (상승/하락/횡보)
+- 주요 레벨 (지지선/저항선)
+- 리스크 평가 (고/중/저)
+- 매매 전략 (진입/목표/손절)
+- 기술적 판정 (강세/약세/중립)
+
+마크다운 헤더(##, ###)와 강조(**bold**)를 적극 활용하세요.
 """
 
             try:
                 response_text = self.generate(prompt)
-                import json
-
-                if "```json" in response_text:
-                    response_text = response_text.split("```json")[1].split("```")[0]
-                elif "```" in response_text:
-                    response_text = response_text.split("```")[1].split("```")[0]
-
-                result = json.loads(response_text.strip())
-                result["ticker"] = ticker
-                result["stock_name"] = stock.name
-                result["current_price"] = float(recent_prices[0].close)
-                result["analyzed_at"] = datetime.now().isoformat()
+                
+                # 텍스트에서 간단한 정보 추출
+                trend = "uptrend"
+                if any(word in response_text.lower() for word in ["상승", "uptrend", "강세", "bullish"]):
+                    trend = "uptrend"
+                elif any(word in response_text.lower() for word in ["하락", "downtrend", "약세", "bearish"]):
+                    trend = "downtrend"
+                elif any(word in response_text.lower() for word in ["횡보", "sideways", "중립"]):
+                    trend = "sideways"
+                
+                signal = "buy"
+                if any(word in response_text.lower() for word in ["매수", "buy", "진입"]):
+                    signal = "buy"
+                elif any(word in response_text.lower() for word in ["매도", "sell"]):
+                    signal = "sell"
+                else:
+                    signal = "hold"
+                
+                result = {
+                    "ticker": ticker,
+                    "stock_name": stock.name,
+                    "current_price": float(recent_prices[0].close),
+                    "trend": trend,
+                    "signal": signal,
+                    "confidence": 0.80,  # 기본값
+                    "summary": response_text,  # 전체 마크다운 텍스트
+                    "analyzed_at": datetime.now().isoformat()
+                }
 
                 logger.info(
-                    f"[DynamicsAgent] {ticker} 분석 완료: {result.get('signal')} "
-                    f"(신뢰도 {result.get('confidence', 0):.2f})"
+                    f"[DynamicsAgent] {ticker} 분석 완료: {signal}"
                 )
 
                 return result

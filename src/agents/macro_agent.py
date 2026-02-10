@@ -158,25 +158,51 @@ class MacroAgent(BaseAgent):
 
 {chr(10).join(indicators_text)}
 
-위 거시경제 데이터를 종합 분석하여 JSON 형식으로 답변하세요.
+위 거시경제 데이터를 종합 분석하여 **마크다운 형식**으로 작성하세요.
+
+반드시 다음 내용을 포함하되, 자유로운 형식으로 작성하십시오:
+- 경기 사이클 진단 (확장/수축/회복/스태그플레이션)
+- 금리/물가 영향 분석
+- 환율/대외 요인
+- 시스템 리스크
+- 거시경제 환경 점수 (-10 ~ +10)
+- 시장 전망 (bullish/bearish/neutral)
+
+마크다운 헤더(##, ###)와 강조(**bold**)를 적극 활용하세요.
 """
 
             try:
                 response_text = self.generate(prompt)
-                import json
-
-                if "```json" in response_text:
-                    response_text = response_text.split("```json")[1].split("```")[0]
-                elif "```" in response_text:
-                    response_text = response_text.split("```")[1].split("```")[0]
-
-                result = json.loads(response_text.strip())
-                result["analyzed_at"] = datetime.now().isoformat()
-                result["reports_count"] = len(reports)
-                result["indicators_count"] = len(indicators)
+                
+                # 텍스트에서 간단한 정보 추출
+                market_outlook = "neutral"
+                if any(word in response_text.lower() for word in ["bullish", "강세", "상승", "우호적"]):
+                    market_outlook = "bullish"
+                elif any(word in response_text.lower() for word in ["bearish", "약세", "하락", "비우호적"]):
+                    market_outlook = "bearish"
+                
+                # 거시경제 점수 추출 시도
+                macro_score = 0
+                import re
+                score_match = re.search(r'[-+]?\d+\s*점|점수[:\s]*[-+]?\d+', response_text)
+                if score_match:
+                    numbers = re.findall(r'[-+]?\d+', score_match.group())
+                    if numbers:
+                        macro_score = int(numbers[0])
+                
+                result = {
+                    "market_outlook": market_outlook,
+                    "macro_score": macro_score,
+                    "confidence": 0.75,
+                    "risk_level": "medium",
+                    "summary": response_text,  # 전체 마크다운 텍스트
+                    "analyzed_at": datetime.now().isoformat(),
+                    "reports_count": len(reports),
+                    "indicators_count": len(indicators)
+                }
 
                 logger.info(
-                    f"[MacroAgent] 분석 완료: {result.get('market_outlook')}"
+                    f"[MacroAgent] 분석 완료: {market_outlook} (점수: {macro_score})"
                 )
 
                 return result

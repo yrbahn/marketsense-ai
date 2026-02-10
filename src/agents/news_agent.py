@@ -265,37 +265,49 @@ class NewsAgent(BaseAgent):
    - 투자자가 빠르게 파악할 수 있는 헤드라인 요약
    - 모호한 표현 지양, 구체적인 팩트 중심
 
-위 지침에 따라 JSON 형식으로 분석 결과를 제공하세요.
+위 지침에 따라 **마크다운 형식**으로 분석 결과를 작성하세요.
+
+반드시 다음 정보를 포함하되, 자유로운 형식으로 작성하십시오:
+- 투자 서사 (시간 흐름에 따른 스토리)
+- 핵심 이벤트 (날짜와 함께)
+- 투자자 헤드라인 요약
+- 감성 평가 (긍정/부정/중립)
+
+마크다운 헤더(##, ###)와 강조(**bold**)를 적극 활용하세요.
 """
 
             try:
                 response_text = self.generate(prompt)
-                # JSON 파싱 시도
-                import json
-                # ```json ``` 제거
-                if "```json" in response_text:
-                    response_text = response_text.split("```json")[1].split("```")[0]
-                elif "```" in response_text:
-                    response_text = response_text.split("```")[1].split("```")[0]
+                
+                # 텍스트 응답을 그대로 사용
+                # 간단한 패턴 매칭으로 sentiment 추출
+                sentiment = "neutral"
+                if any(word in response_text.lower() for word in ["긍정", "positive", "호재", "상승"]):
+                    sentiment = "positive"
+                elif any(word in response_text.lower() for word in ["부정", "negative", "악재", "하락"]):
+                    sentiment = "negative"
+                
+                # 투자 서사 저장 (전체 텍스트의 일부)
+                narrative = response_text[:500] if len(response_text) > 500 else response_text
+                
+                if not stock.raw_data:
+                    stock.raw_data = {}
+                stock.raw_data['news_narrative'] = narrative
+                stock.raw_data['news_updated_at'] = datetime.now().isoformat()
+                session.commit()
 
-                result = json.loads(response_text.strip())
-                result["ticker"] = ticker
-                result["stock_name"] = stock.name
-                result["news_count"] = len(news_list)
-                result["analyzed_at"] = datetime.now().isoformat()
-
-                # 투자 서사를 DB에 저장 (다음 분석 시 활용)
-                if "narrative" in result:
-                    if not stock.raw_data:
-                        stock.raw_data = {}
-                    stock.raw_data['news_narrative'] = result['narrative']
-                    stock.raw_data['news_updated_at'] = datetime.now().isoformat()
-                    session.commit()
-                    logger.debug(f"[NewsAgent] {ticker} 투자 서사 DB 저장")
+                result = {
+                    "ticker": ticker,
+                    "stock_name": stock.name,
+                    "news_count": len(news_list),
+                    "sentiment": sentiment,
+                    "confidence": 0.75,  # 기본값
+                    "summary": response_text,  # 전체 마크다운 텍스트
+                    "analyzed_at": datetime.now().isoformat()
+                }
 
                 logger.info(
-                    f"[NewsAgent] {ticker} 분석 완료: {result.get('sentiment')} "
-                    f"(신뢰도 {result.get('confidence', 0):.2f})"
+                    f"[NewsAgent] {ticker} 분석 완료: {sentiment}"
                 )
 
                 return result

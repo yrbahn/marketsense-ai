@@ -603,26 +603,42 @@ class FundamentalsAgent(BaseAgent):
    - **부정**: 펀더멘털 부진 or 고평가 or 증권사 부정적
    - **매우 부정**: 펀더멘털 악화 + 고평가 + 증권사 매도 의견
 
-위 재무 데이터, 동종업계 비교, 밸류에이션, 증권사 리포트를 종합하여 JSON 형식으로 답변하세요.
-반드시 7단계 reasoning_steps, analyst_sentiment, fundamental_score를 포함하십시오.
+위 재무 데이터, 동종업계 비교, 밸류에이션, 증권사 리포트를 종합하여 **마크다운 형식**으로 분석 결과를 작성하세요.
+
+반드시 다음 내용을 포함하되, 자유로운 형식으로 작성하십시오:
+- 7단계 추론 과정 (Chain-of-Thought)
+- 밸류에이션 평가 (저평가/적정/고평가)
+- 증권사 sentiment (매우 긍정 ~ 매우 부정)
+- 펀더멘털 종합 점수 (5단계)
+- YoY/QoQ 비교 및 추세 분석
+
+마크다운 헤더(##, ###)와 강조(**bold**)를 적극 활용하세요.
 """
 
             try:
                 response_text = self.generate(prompt)
-                import json
-
-                if "```json" in response_text:
-                    response_text = response_text.split("```json")[1].split("```")[0]
-                elif "```" in response_text:
-                    response_text = response_text.split("```")[1].split("```")[0]
-
-                result = json.loads(response_text.strip())
-                result["ticker"] = ticker
-                result["stock_name"] = stock.name
-                result["analyzed_at"] = datetime.now().isoformat()
+                
+                # 텍스트에서 간단한 정보 추출
+                valuation = "undervalued"  # 기본값
+                if any(word in response_text for word in ["저평가", "undervalued", "매력적"]):
+                    valuation = "undervalued"
+                elif any(word in response_text for word in ["고평가", "overvalued", "과대평가"]):
+                    valuation = "overvalued"
+                elif any(word in response_text for word in ["적정", "fair", "중립"]):
+                    valuation = "fair"
+                
+                result = {
+                    "ticker": ticker,
+                    "stock_name": stock.name,
+                    "valuation": {"rating": valuation},
+                    "fundamental_score": "긍정",  # 기본값
+                    "confidence": 0.85,
+                    "summary": response_text,  # 전체 마크다운 텍스트
+                    "analyzed_at": datetime.now().isoformat()
+                }
 
                 logger.info(
-                    f"[FundamentalsAgent] {ticker} 분석 완료: {result.get('valuation')}"
+                    f"[FundamentalsAgent] {ticker} 분석 완료: {valuation}"
                 )
 
                 return result
