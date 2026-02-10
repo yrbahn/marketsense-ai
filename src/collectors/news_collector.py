@@ -47,9 +47,16 @@ class NewsCollector(BaseCollector):
                 kr_tickers = [t for t in tickers if t.isdigit() and len(t) == 6]
                 us_tickers = [t for t in tickers if t not in kr_tickers]
 
-                # 한국 종목: 네이버 금융 뉴스
+                # 한국 종목: 네이버 금융 뉴스 + 검색 API
                 if kr_tickers:
                     total += self._collect_naver_finance(session, kr_tickers)
+                    
+                    # 네이버 검색 API로 추가 뉴스 수집 (쿼리 확장)
+                    naver_client_id = os.getenv("NAVER_CLIENT_ID")
+                    naver_client_secret = os.getenv("NAVER_CLIENT_SECRET")
+                    
+                    if naver_client_id and naver_client_secret:
+                        total += self._collect_naver_search(session, kr_tickers)
 
                 # 미국 종목: 기존 소스
                 if us_tickers:
@@ -332,3 +339,186 @@ class NewsCollector(BaseCollector):
 
         logger.info(f"[RSS] 총 {count}건 수집")
         return count
+    
+    # ─────────────────────────────────────
+    # Naver Search API (쿼리 확장)
+    # ─────────────────────────────────────
+    def _collect_naver_search(self, session, tickers: List[str]) -> int:
+        """네이버 검색 API로 확장 쿼리 뉴스 수집"""
+        client_id = os.getenv("NAVER_CLIENT_ID")
+        client_secret = os.getenv("NAVER_CLIENT_SECRET")
+        
+        if not client_id or not client_secret:
+            logger.warning("네이버 검색 API 키 미설정, 확장 검색 스킵")
+            return 0
+        
+        count = 0
+        total_tickers = len(tickers)
+        
+        for idx, ticker in enumerate(tickers):
+            if idx % 50 == 0 and idx > 0:
+                logger.info(f"[NaverSearch] 진행: {idx}/{total_tickers} ({count}건)")
+            
+            stock = session.query(Stock).filter_by(ticker=ticker).first()
+            if not stock:
+                continue
+            
+            # 쿼리 확장: 종목명 + 업종 키워드
+            queries = self._expand_query(stock)
+            
+            for query in queries:
+                try:
+                    # 네이버 검색 API 호출
+                    url = "https://openapi.naver.com/v1/search/news.json"
+                    headers = {
+                        "X-Naver-Client-Id": client_id,
+                        "X-Naver-Client-Secret": client_secret
+                    }
+                    params = {
+                        "query": query,
+                        "display": 10,  # 최대 10개
+                        "sort": "date"  # 최신순
+                    }
+                    
+                    resp = requests.get(url, headers=headers, params=params, timeout=10)
+                    
+                    if resp.status_code != 200:
+                        continue
+                    
+                    data = resp.json()
+                    items = data.get("items", [])
+                    
+                    for item in items:
+                        # 관련도 계산
+                        relevance_score = self._calculate_relevance(stock, item)
+                        
+                        # 낮은 관련도 필터링
+                        if relevance_score < 0.3:
+                            continue
+                        
+                        # URL 정리
+                        news_url = item.get("link", "")
+                        if not news_url:
+                            continue
+                        
+                        # 중복 체크
+                        exists = session.query(NewsArticle).filter_by(url=news_url).first()
+                        if exists:
+                            continue
+                        
+                        # 제목/설명 HTML 태그 제거
+                        title = self._clean_html(item.get("title", ""))
+                        description = self._clean_html(item.get("description", ""))
+                        
+                        # 날짜 파싱
+                        pub_date_str = item.get("pubDate", "")
+                        pub_at = None
+                        try:
+                            # RFC 2822 형식: "Mon, 10 Feb 2026 16:00:00 +0900"
+                            pub_at = datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S %z")
+                            pub_at = pub_at.replace(tzinfo=None)  # naive datetime
+                        except:
+                            pass
+                        
+                        # 최근 30일 이내만
+                        if pub_at:
+                            cutoff = datetime.now() - timedelta(days=self.lookback_days)
+                            if pub_at < cutoff:
+                                continue
+                        
+                        # 뉴스 저장
+                        news = NewsArticle(
+                            stock_id=stock.id,
+                            ticker=ticker,
+                            title=title,
+                            summary=description,
+                            url=news_url,
+                            source="naver_search",
+                            published_at=pub_at,
+                            category="finance",
+                            related_tickers=[ticker]
+                        )
+                        session.add(news)
+                        count += 1
+                    
+                    time.sleep(0.1)  # Rate limit
+                    
+                except Exception as e:
+                    logger.debug(f"[NaverSearch] {ticker} - {query} 실패: {e}")
+                    continue
+            
+            session.flush()
+        
+        logger.info(f"[NaverSearch] 총 {count}건 수집 완료")
+        return count
+    
+    def _expand_query(self, stock: Stock) -> List[str]:
+        """쿼리 확장: 종목명 + 업종 키워드"""
+        queries = []
+        
+        # 1. 종목명
+        queries.append(stock.name)
+        
+        # 2. 종목명 + 업종
+        if stock.sector and stock.sector != '기타':
+            queries.append(f"{stock.name} {stock.sector}")
+        
+        # 3. 업종별 키워드 (관련 뉴스)
+        sector_keywords = {
+            '반도체': ['반도체', '칩', '웨이퍼', 'DRAM', 'NAND'],
+            '화장품': ['화장품', 'K-뷰티', '마스크팩', '스킨케어'],
+            '바이오': ['바이오', '신약', '임상', '치료제'],
+            '자동차': ['전기차', 'EV', '배터리', '자동차'],
+            '2차전지': ['배터리', '2차전지', 'LFP', 'NCM'],
+        }
+        
+        if stock.sector in sector_keywords:
+            # 업종 키워드만 (종목이 간접적으로 언급될 수 있음)
+            for keyword in sector_keywords[stock.sector][:2]:  # 상위 2개만
+                queries.append(keyword)
+        
+        return queries
+    
+    def _calculate_relevance(self, stock: Stock, item: dict) -> float:
+        """뉴스 관련도 점수 계산 (0.0 ~ 1.0)"""
+        score = 0.0
+        
+        title = item.get("title", "").lower()
+        description = item.get("description", "").lower()
+        text = title + " " + description
+        
+        # 1. 종목명 직접 언급 (+0.5)
+        if stock.name.lower() in text:
+            score += 0.5
+        
+        # 2. 업종 언급 (+0.3)
+        if stock.sector and stock.sector.lower() in text:
+            score += 0.3
+        
+        # 3. 업종 관련 키워드 (+0.2)
+        sector_keywords = {
+            '반도체': ['반도체', '칩', '웨이퍼'],
+            '화장품': ['화장품', '뷰티', '마스크팩'],
+            '바이오': ['바이오', '신약', '치료제'],
+        }
+        
+        if stock.sector in sector_keywords:
+            for keyword in sector_keywords[stock.sector]:
+                if keyword in text:
+                    score += 0.2
+                    break
+        
+        return min(score, 1.0)
+    
+    def _clean_html(self, text: str) -> str:
+        """HTML 태그 제거"""
+        import re
+        # <b>, </b> 등 제거
+        text = re.sub(r'<[^>]+>', '', text)
+        # &quot; 등 HTML 엔티티 변환
+        text = text.replace("&quot;", '"')
+        text = text.replace("&apos;", "'")
+        text = text.replace("&amp;", "&")
+        text = text.replace("&lt;", "<")
+        text = text.replace("&gt;", ">")
+        return text
