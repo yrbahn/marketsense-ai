@@ -80,7 +80,7 @@ class MacroAgent(BaseAgent):
             if indicators:
                 indicators_text.append("\n주요 경제 지표:")
                 for ind in indicators[:10]:
-                    date_str = ind.observation_date.strftime("%Y-%m")
+                    date_str = ind.date.strftime("%Y-%m")
                     indicators_text.append(
                         f"- {ind.series_name} ({date_str}): {ind.value}"
                     )

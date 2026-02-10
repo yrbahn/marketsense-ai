@@ -76,16 +76,16 @@ class MacroCollector(BaseCollector):
                         continue
 
                 # 중복 체크
-                exists = session.query(MacroReport).filter_by(url=url).first()
+                exists = session.query(MacroReport).filter_by(source_url=url).first()
                 if exists:
                     continue
 
                 summary = entry.get("summary", "")
                 report = MacroReport(
-                    source="bok",
-                    doc_type="press_release",
+                    source_name="한국은행",
+                    report_type="press_release",
                     title=title,
-                    url=url,
+                    source_url=url,
                     published_at=pub_at,
                     summary=summary[:1000] if summary else None,
                 )
@@ -147,7 +147,7 @@ class MacroCollector(BaseCollector):
                         # 중복 체크
                         exists = session.query(MacroIndicator).filter_by(
                             series_id=indicator["code"],
-                            observation_date=obs_date,
+                            date=obs_date,
                         ).first()
                         if exists:
                             continue
@@ -160,7 +160,7 @@ class MacroCollector(BaseCollector):
                         ind = MacroIndicator(
                             series_id=indicator["code"],
                             series_name=indicator["name"],
-                            observation_date=obs_date,
+                            date=obs_date,
                             value=value,
                             frequency="monthly",
                             source="bok",
@@ -180,3 +180,26 @@ class MacroCollector(BaseCollector):
             logger.warning(f"[BOK API] 실패: {e}")
 
         return count
+
+
+if __name__ == "__main__":
+    """CLI 실행"""
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    from src.storage.database import init_db
+    from src.utils.helpers import load_config
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='[%(asctime)s] %(levelname)s %(name)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    config = load_config()
+    db = init_db(config)
+    
+    collector = MacroCollector(config, db)
+    collector.collect()
+    
+    print("✅ 거시경제 데이터 수집 완료")
