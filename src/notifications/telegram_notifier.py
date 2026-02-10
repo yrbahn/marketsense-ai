@@ -4,6 +4,7 @@ OpenClaw message 기능을 사용하여 Telegram으로 알림 전송
 """
 import logging
 import subprocess
+import os
 from typing import Optional
 from datetime import datetime
 
@@ -17,10 +18,23 @@ class TelegramNotifier:
         """
         Args:
             channel: OpenClaw 채널 (기본: telegram)
-            target: 수신자 (None이면 기본 채널로 전송)
+            target: 수신자 (채널 ID, username, 또는 None)
+                   예: "-1001234567890" (채널 ID)
+                   예: "@marketsense_alerts" (username)
+                   예: None (현재 대화)
         """
         self.channel = channel
+        
+        # 환경변수에서 채널 읽기 (target이 None일 때만)
+        if target is None:
+            target = os.getenv("TELEGRAM_ALERT_CHANNEL")
+        
         self.target = target
+        
+        if self.target:
+            logger.info(f"[Telegram] 알림 채널: {self.target}")
+        else:
+            logger.info(f"[Telegram] 현재 대화로 전송")
 
     def send(self, message: str, silent: bool = False) -> bool:
         """메시지 전송
@@ -33,21 +47,41 @@ class TelegramNotifier:
             성공 여부
         """
         try:
-            # 표준 출력으로 메시지 출력 (크론 작업에서 처리)
-            # 특수 마커로 감싸서 출력
-            print("\n" + "="*60)
-            print("📱 TELEGRAM_MESSAGE_START")
-            print("="*60)
-            print(message)
-            print("="*60)
-            print("📱 TELEGRAM_MESSAGE_END")
-            print("="*60 + "\n")
+            # OpenClaw CLI로 메시지 전송
+            cmd = ["openclaw", "message", "send"]
             
-            logger.info(f"[Telegram] 메시지 출력 완료")
-            return True
+            # 채널 지정
+            if self.target:
+                cmd.extend(["--target", self.target])
+            
+            # 무음 알림
+            if silent:
+                cmd.append("--silent")
+            
+            # 메시지 추가
+            cmd.extend(["--message", message])
+            
+            # 실행
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+            
+            if result.returncode == 0:
+                logger.info(f"[Telegram] 알림 전송 성공")
+                return True
+            else:
+                logger.error(f"[Telegram] 알림 전송 실패: {result.stderr}")
+                # 실패해도 콘솔 출력
+                print(f"\n[알림 메시지]\n{message}\n")
+                return False
                 
         except Exception as e:
-            logger.error(f"[Telegram] 메시지 출력 오류: {e}")
+            logger.error(f"[Telegram] 알림 전송 오류: {e}")
+            # 오류 시 콘솔 출력
+            print(f"\n[알림 메시지]\n{message}\n")
             return False
 
     def send_signal_alert(self, ticker: str, stock_name: str, signal: str, 

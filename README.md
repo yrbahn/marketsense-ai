@@ -302,6 +302,34 @@ KOSPI: +1.2% (2,750)
 python3 test_notification.py
 ```
 
+**새 채널로 알림 보내기:**
+
+1. **Telegram에서 채널 생성**
+   ```
+   Telegram → New Channel → 
+   - 채널명: "MarketSenseAI 알림"
+   - Public 설정
+   - Username: @marketsense_alerts
+   ```
+
+2. **.env 파일에 채널 설정**
+   ```bash
+   # .env 파일 수정
+   TELEGRAM_ALERT_CHANNEL=@marketsense_alerts
+   
+   # 또는 채널 ID 사용
+   # TELEGRAM_ALERT_CHANNEL=-1001234567890
+   ```
+
+3. **테스트**
+   ```bash
+   # 환경변수 채널로 전송
+   python3 test_notification.py
+   
+   # 또는 직접 지정
+   python3 test_notification.py --channel @marketsense_alerts
+   ```
+
 **일일 리포트 (수동):**
 ```bash
 python3 src/daily_report.py

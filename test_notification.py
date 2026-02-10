@@ -1,12 +1,28 @@
 #!/usr/bin/env python3
-"""Telegram 알림 테스트"""
-from src.notifications.telegram_notifier import get_notifier
+"""Telegram 알림 테스트
 
-notifier = get_notifier()
+환경변수 설정:
+  export TELEGRAM_ALERT_CHANNEL="@channel_name"  # 또는 채널 ID
+
+사용법:
+  python3 test_notification.py
+  python3 test_notification.py --channel @my_channel
+"""
+import sys
+import os
+from src.notifications.telegram_notifier import TelegramNotifier
+
+# 명령행 인자로 채널 지정 가능
+target = None
+if len(sys.argv) > 2 and sys.argv[1] == "--channel":
+    target = sys.argv[2]
+    print(f"📱 타겟 채널: {target}")
+
+notifier = TelegramNotifier(target=target)
 
 # 1. 간단한 메시지
-print("1. 간단한 메시지 전송...")
-notifier.send("🧪 MarketSenseAI 알림 봇 테스트\n\n시스템이 정상 작동합니다!")
+print("\n1. 간단한 메시지 전송...")
+notifier.send("🧪 **MarketSenseAI 알림 봇 테스트**\n\n시스템이 정상 작동합니다! ✅")
 
 # 2. 투자 신호 알림
 print("2. 투자 신호 알림 전송...")
@@ -32,3 +48,4 @@ notifier.send_price_alert(
 )
 
 print("\n✅ 테스트 완료! Telegram을 확인하세요.")
+print(f"📱 전송 채널: {target if target else '현재 대화'}")
