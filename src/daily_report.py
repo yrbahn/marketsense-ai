@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Tuple
 
-from src.storage.database import Database
+from src.storage.database import init_db
 from src.storage.models import Stock, PriceData
 from src.agents.signal_agent import SignalAgent
 from src.notifications.telegram_notifier import get_notifier
@@ -25,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger("marketsense")
 
 
-def get_top_stocks(db: Database, limit: int = 50) -> List[Tuple[str, str]]:
+def get_top_stocks(db, limit: int = 50) -> List[Tuple[str, str]]:
     """시총 상위 종목 조회
     
     Args:
@@ -43,7 +43,7 @@ def get_top_stocks(db: Database, limit: int = 50) -> List[Tuple[str, str]]:
         return [(s.ticker, s.name) for s in stocks]
 
 
-def get_market_summary(db: Database) -> dict:
+def get_market_summary(db) -> dict:
     """시장 현황 조회
     
     Args:
@@ -59,7 +59,7 @@ def get_market_summary(db: Database) -> dict:
     }
 
 
-def analyze_and_rank(db: Database, stocks: List[Tuple[str, str]], 
+def analyze_and_rank(db, stocks: List[Tuple[str, str]], 
                     top_n: int = 10) -> List[Tuple[str, str, str, float]]:
     """종목 분석 및 순위화
     
@@ -110,7 +110,7 @@ def main():
     
     # 설정 로드
     config = load_config()
-    db = Database(config)
+    db = init_db(config)
     
     # 상위 종목 조회
     logger.info("시총 상위 50개 종목 조회...")
