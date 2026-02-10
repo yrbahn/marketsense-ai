@@ -240,6 +240,51 @@ streamlit run src/dashboard.py
 - 🤖 **AI 분석**: 5개 에이전트 실시간 실행
 - 📈 **종합 분석**: 최종 투자 신호 확인
 
+### ⚡ 준실시간 주가 모니터링
+
+**계좌 없이 실시간 급등/급락 알림!**
+
+**기본 실행** (주요 10개 종목, 5초 주기):
+```bash
+python3 -m src.realtime_monitor
+```
+
+**특정 종목 감시:**
+```bash
+# 삼성전자, SK하이닉스
+python3 -m src.realtime_monitor --tickers 005930 000660 --interval 3
+
+# 시총 상위 50개
+python3 -m src.realtime_monitor --top 50 --interval 5
+```
+
+**급변동 기준 조정:**
+```bash
+# ±1% 변동 시 알림 (민감)
+python3 -m src.realtime_monitor --threshold 1.0
+
+# ±5% 변동 시 알림 (둔감)
+python3 -m src.realtime_monitor --threshold 5.0
+```
+
+**백그라운드 실행:**
+```bash
+nohup python3 -m src.realtime_monitor --top 50 --interval 5 \
+  > logs/realtime.log 2>&1 &
+```
+
+**옵션:**
+- `--interval`: 체크 주기 (초, 기본: 5)
+- `--threshold`: 급변동 기준 (%, 기본: 2.0)
+- `--tickers`: 감시할 종목 코드
+- `--top`: 시총 상위 N개 감시
+
+**특징:**
+- ✅ 증권 계좌 불필요
+- ✅ 무료 사용
+- ✅ Telegram 자동 알림
+- ✅ 장중 (월~금 09:00-15:30) 실시간 작동
+
 ### 자동 업데이트 (OpenClaw)
 
 **매일 오후 4시 자동 데이터 수집:**
@@ -486,6 +531,7 @@ marketsense-ai/
 - [x] **백테스팅 엔진** (7개 전략)
 - [x] **포트폴리오 최적화** (Markowitz MPT)
 - [x] **Telegram 알림 봇** (투자 신호, 급등/급락, 일일 리포트)
+- [x] **준실시간 데이터 모니터링** (1~60초 주기, 계좌 불필요)
 - [x] Streamlit 대시보드
 - [x] CLI 분석 도구
 - [x] PostgreSQL 전환 (동시 쓰기)
@@ -494,9 +540,9 @@ marketsense-ai/
 ### 🚧 개선 예정
 - [ ] RAG 파이프라인 (뉴스/재무제표 벡터 DB)
 - [ ] Discord 알림 봇
-- [ ] 실시간 데이터 스트리밍
 - [ ] 추가 AI 전략 (강화학습)
 - [ ] 대화형 Telegram 봇 (명령어 인터페이스)
+- [ ] 실시간 WebSocket (증권사 API 연동)
 
 ## 🎓 참고 논문
 
