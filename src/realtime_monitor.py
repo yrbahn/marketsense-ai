@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """준실시간 주가 모니터링
 
-네이버 금융 크롤링으로 1초~10초 주기 실시간 모니터링
-계좌 없이 사용 가능!
+한국투자증권 API로 실시간 시세 모니터링
+공식 API 사용으로 안정성 향상!
 """
 import sys
 import time
 import logging
-import requests
 from datetime import datetime
 from typing import Dict, Optional, List, Tuple
 import json
 
 from src.notifications.telegram_notifier import get_notifier
+from src.utils.kis_api import KISApi
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,60 +40,35 @@ class RealtimeMonitor:
         self.volume_threshold = volume_threshold
         self.notifier = get_notifier()
         self.last_prices = {}  # {ticker: (price, volume, timestamp)}
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-        })
+        self.kis_api = KISApi()  # KIS API 클라이언트
+        logger.info("[모니터] KIS API 초기화 완료")
     
     def get_realtime_price(self, ticker: str) -> Optional[Dict]:
-        """네이버 금융에서 실시간 시세 가져오기
+        """KIS API에서 실시간 시세 가져오기
         
         Args:
             ticker: 종목 코드
             
         Returns:
-            {'price': float, 'change': float, 'volume': int, 'time': str}
+            {'price': int, 'change': int, 'change_pct': float, 'volume': int, 'time': str}
         """
         try:
-            # 네이버 금융 Polling API
-            url = f"https://polling.finance.naver.com/api/realtime?query=SERVICE_ITEM:{ticker}"
+            # KIS API로 현재가 조회
+            data = self.kis_api.get_current_price(ticker)
             
-            response = self.session.get(url, timeout=3)
-            
-            if response.status_code != 200:
-                logger.warning(f"[{ticker}] 가격 조회 실패: {response.status_code}")
+            if not data:
                 return None
-            
-            data = response.json()
-            
-            # JSON 파싱
-            if not data or 'result' not in data:
-                return None
-            
-            result = data['result']
-            if 'areas' not in result or not result['areas']:
-                return None
-            
-            area = result['areas'][0]
-            if 'datas' not in area or not area['datas']:
-                return None
-            
-            item = area['datas'][0]
-            
-            # rf: 등락 부호 (1=상한, 2=상승, 3=보합, 4=하락, 5=하한)
-            rf = item.get('rf', '3')
-            change_sign = 1 if rf in ['1', '2'] else -1 if rf in ['4', '5'] else 0
             
             return {
-                'price': float(item.get('nv', 0)),  # 현재가
-                'change': float(item.get('cv', 0)) * change_sign,  # 전일대비 (부호 적용)
-                'change_rate': float(item.get('cr', 0)) * change_sign,  # 등락률 (부호 적용)
-                'volume': int(item.get('aq', 0)),  # 거래량
-                'time': datetime.now().strftime('%H:%M:%S')  # 현재 시간
+                'price': data['price'],  # 현재가
+                'change': data['change'],  # 전일대비
+                'change_rate': data['change_pct'],  # 등락률
+                'volume': data['volume'],  # 누적 거래량
+                'time': data.get('time', datetime.now().strftime('%H%M%S'))  # 시간
             }
             
         except Exception as e:
-            logger.error(f"[{ticker}] 실시간 가격 조회 오류: {e}")
+            logger.debug(f"[{ticker}] 실시간 가격 조회 오류: {e}")
             return None
     
     def check_price_change(self, ticker: str, name: str, 
@@ -165,9 +140,11 @@ class RealtimeMonitor:
         try:
             while True:
                 check_count += 1
+                cycle_start = time.time()
                 logger.info(f"\n[{datetime.now().strftime('%H:%M:%S')}] 체크 #{check_count} 시작...")
                 
-                for ticker, name in watchlist:
+                # 배치 처리: 초당 20건 제한 준수
+                for idx, (ticker, name) in enumerate(watchlist):
                     try:
                         # 실시간 가격 조회
                         current = self.get_realtime_price(ticker)
@@ -197,9 +174,17 @@ class RealtimeMonitor:
                             current['time']
                         )
                         
+                        # API 호출 제한 준수: 50ms 간격 (초당 20건)
+                        # 마지막 종목은 대기 안 함
+                        if idx < len(watchlist) - 1:
+                            time.sleep(0.05)
+                        
                     except Exception as e:
                         logger.error(f"[{ticker}] 모니터링 오류: {e}")
                         continue
+                
+                # 사이클 소요 시간 계산
+                cycle_elapsed = time.time() - cycle_start
                 
                 # 통계 출력
                 if check_count % 10 == 0:
@@ -207,12 +192,17 @@ class RealtimeMonitor:
                     logger.info(
                         f"\n📊 통계: {elapsed}초 경과 | "
                         f"체크 {check_count}회 | "
-                        f"알림 {alert_count}건"
+                        f"알림 {alert_count}건 | "
+                        f"사이클: {cycle_elapsed:.1f}초"
                     )
                 
-                # 대기
-                logger.info(f"다음 체크까지 {self.interval}초 대기...")
-                time.sleep(self.interval)
+                # interval까지 남은 시간 대기
+                remaining = self.interval - cycle_elapsed
+                if remaining > 0:
+                    logger.info(f"다음 체크까지 {remaining:.1f}초 대기...")
+                    time.sleep(remaining)
+                else:
+                    logger.warning(f"사이클 시간 초과: {cycle_elapsed:.1f}초 (목표: {self.interval}초)")
                 
         except KeyboardInterrupt:
             logger.info("\n\n⏹️  모니터링 중단")

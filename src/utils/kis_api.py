@@ -361,6 +361,69 @@ class KISApi:
         except Exception as e:
             logger.error(f"[KIS] 공매도 조회 오류: {e}")
             return None
+    
+    def get_current_price(self, ticker: str) -> Optional[Dict]:
+        """국내주식 현재가 시세
+        
+        Args:
+            ticker: 종목코드 (6자리)
+        
+        Returns:
+            Dict with current price info
+            주요 필드:
+            - stck_prpr: 현재가
+            - prdy_vrss: 전일 대비
+            - prdy_vrss_sign: 전일 대비 부호 (1:상한, 2:상승, 3:보합, 4:하한, 5:하락)
+            - prdy_ctrt: 전일 대비율
+            - acml_vol: 누적 거래량
+            - acml_tr_pbmn: 누적 거래 대금
+            - stck_oprc: 시가
+            - stck_hgpr: 고가
+            - stck_lwpr: 저가
+        """
+        # KIS API: 국내주식현재가 시세
+        # TR ID: FHKST01010100
+        
+        url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/inquire-price"
+        
+        headers = self._get_headers("FHKST01010100")
+        
+        params = {
+            "FID_COND_MRKT_DIV_CODE": "J",  # J: 주식, ETF, ETN
+            "FID_INPUT_ISCD": ticker,
+        }
+        
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=5)
+            
+            if resp.status_code == 200:
+                result = resp.json()
+                
+                if result.get("rt_cd") == "0":
+                    output = result.get("output")
+                    if output:
+                        # 필요한 필드만 추출하고 형변환
+                        return {
+                            'price': int(output.get('stck_prpr', 0)),  # 현재가
+                            'change': int(output.get('prdy_vrss', 0)),  # 전일 대비
+                            'change_pct': float(output.get('prdy_ctrt', 0)),  # 전일 대비율
+                            'volume': int(output.get('acml_vol', 0)),  # 누적 거래량
+                            'open': int(output.get('stck_oprc', 0)),  # 시가
+                            'high': int(output.get('stck_hgpr', 0)),  # 고가
+                            'low': int(output.get('stck_lwpr', 0)),  # 저가
+                            'time': output.get('stck_prpr_time', ''),  # 현재가 시간
+                        }
+                    return None
+                else:
+                    logger.warning(f"[KIS] API 응답 오류: {result.get('msg1')}")
+                    return None
+            else:
+                logger.error(f"[KIS] API 호출 실패: {resp.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.debug(f"[KIS] 현재가 조회 오류 ({ticker}): {e}")
+            return None
 
 
 # 편의 함수
