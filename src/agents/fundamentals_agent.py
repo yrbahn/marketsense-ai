@@ -152,13 +152,13 @@ class FundamentalsAgent(BaseAgent):
             if not stock:
                 return {"error": f"종목 {ticker}를 찾을 수 없습니다"}
 
-            # 최근 재무제표 (OpenDartReader 우선)
+            # 최근 재무제표 (OpenDartReader 우선, 8개 분기 = 2년)
             statements = (
                 session.query(FinancialStatement)
                 .filter(FinancialStatement.stock_id == stock.id)
                 .filter(FinancialStatement.source == 'opendartreader')
                 .order_by(FinancialStatement.period_end.desc())
-                .limit(4)
+                .limit(8)
                 .all()
             )
             
@@ -168,7 +168,7 @@ class FundamentalsAgent(BaseAgent):
                     session.query(FinancialStatement)
                     .filter(FinancialStatement.stock_id == stock.id)
                     .order_by(FinancialStatement.period_end.desc())
-                    .limit(4)
+                    .limit(8)
                     .all()
                 )
 
@@ -265,8 +265,15 @@ class FundamentalsAgent(BaseAgent):
 종목: {stock.name} ({ticker})
 업종: {stock.industry or 'N/A'}
 
-재무제표 (최근 4분기):
+재무제표 (최근 8개 분기 = 2년):
 {''.join(financials_text)}{peer_text}
+
+분석 시 중점 사항:
+1. YoY (전년 동기 대비) 성장률 계산 및 추세 파악
+2. QoQ (전분기 대비) 변화 추이 분석
+3. 2년간 성장 가속/둔화 여부
+4. 계절성 패턴 존재 여부
+5. 수익성/안정성 지표의 시계열 추이
 
 위 재무 데이터와 동종업계 비교를 종합 분석하여 JSON 형식으로 답변하세요.
 """
