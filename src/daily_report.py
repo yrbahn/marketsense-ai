@@ -179,7 +179,7 @@ def main():
     
     # AI 분석 및 순위화
     logger.info("AI 분석 시작...")
-    top_signals = analyze_and_rank(db, stocks, top_n=10)
+    top_signals = analyze_and_rank(db, stocks, top_n=10, max_workers=5)
     logger.info(f"상위 신호 {len(top_signals)}개 추출")
     
     if not top_signals:
