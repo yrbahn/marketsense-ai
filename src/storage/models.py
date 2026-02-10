@@ -32,6 +32,7 @@ class Stock(Base):
     index_membership = Column(String(50))  # SP100, SP500
     cik = Column(String(20))  # SEC CIK number
     is_active = Column(Boolean, default=True)
+    raw_data = Column(JSON)  # 확장 데이터 (LLM 키워드 캐시 등)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
