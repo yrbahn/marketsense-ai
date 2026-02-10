@@ -13,6 +13,7 @@ from .base_agent import BaseAgent
 from .news_agent import NewsAgent
 from .fundamentals_agent import FundamentalsAgent
 from .dynamics_agent import DynamicsAgent
+from .macro_agent import MacroAgent
 
 logger = logging.getLogger("marketsense")
 
@@ -158,25 +159,35 @@ class SignalAgent(BaseAgent):
         logger.info(f"[SignalAgent] {ticker} 종합 분석 시작")
         
         try:
-            # 1. NewsAgent 실행
+            # 1. MacroAgent 실행 (시장 전반 상황)
+            macro_agent = MacroAgent(self.config, self.db)
+            macro_result = macro_agent.analyze(lookback_days=90)
+            logger.debug(f"[SignalAgent] 거시경제 분석 완료")
+            
+            # 2. NewsAgent 실행
             news_agent = NewsAgent(self.config, self.db)
             news_result = news_agent.analyze(ticker)
             logger.debug(f"[SignalAgent] {ticker} 뉴스 분석 완료")
             
-            # 2. FundamentalsAgent 실행
+            # 3. FundamentalsAgent 실행
             fundamentals_agent = FundamentalsAgent(self.config, self.db)
             fundamentals_result = fundamentals_agent.analyze(ticker)
             logger.debug(f"[SignalAgent] {ticker} 펀더멘털 분석 완료")
             
-            # 3. DynamicsAgent 실행
+            # 4. DynamicsAgent 실행
             dynamics_agent = DynamicsAgent(self.config, self.db)
             dynamics_result = dynamics_agent.analyze(ticker)
             logger.debug(f"[SignalAgent] {ticker} 기술적 분석 완료")
             
-            # 4. 3개 에이전트 결과 통합
+            # 5. 4개 에이전트 결과 통합
             prompt = f"""{self.SYSTEM_PROMPT}
 
 종목 코드: {ticker}
+
+**거시경제 분석 (MacroAgent):**
+{macro_result.get('summary', 'N/A')}
+- 시장 전망: {macro_result.get('market_outlook', 'N/A')}
+- 리스크 수준: {macro_result.get('risk_level', 'N/A')}
 
 **뉴스 분석 (NewsAgent):**
 {news_result.get('summary', 'N/A')}
@@ -193,7 +204,7 @@ class SignalAgent(BaseAgent):
 - 추세: {dynamics_result.get('trend', 'N/A')}
 - 모멘텀: {dynamics_result.get('momentum', 'N/A')}
 
-위 3개 에이전트의 분석 결과를 종합하여 최종 투자 신호를 생성하세요.
+위 4개 에이전트의 분석 결과를 종합하여 최종 투자 신호를 생성하세요.
 """
             
             response_text = self.generate(prompt)
@@ -209,6 +220,8 @@ class SignalAgent(BaseAgent):
             result["analyzed_at"] = datetime.now().isoformat()
             
             # 각 에이전트 결과 포함
+            result["macro_summary"] = macro_result.get('summary', '')
+            result["macro_outlook"] = macro_result.get('market_outlook', 'N/A')
             result["news_summary"] = news_result.get('summary', '')
             result["news_sentiment"] = news_result.get('sentiment', 'N/A')
             result["fundamentals_summary"] = fundamentals_result.get('summary', '')

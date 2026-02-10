@@ -208,8 +208,9 @@ def main():
             try:
                 detailed_analysis = signal_agent.analyze(ticker)
                 
-                # reasons 추출
+                # reasons 추출 (4개 에이전트)
                 reasons = {
+                    'macro_summary': detailed_analysis.get('macro_summary', ''),
                     'news_summary': detailed_analysis.get('news_summary', ''),
                     'fundamentals_summary': detailed_analysis.get('fundamentals_summary', ''),
                     'dynamics_summary': detailed_analysis.get('dynamics_summary', ''),
