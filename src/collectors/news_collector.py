@@ -389,11 +389,14 @@ class NewsCollector(BaseCollector):
                     items = data.get("items", [])
                     
                     for item in items:
-                        # 관련도 계산
-                        relevance_score = self._calculate_relevance(stock, item)
+                        # 관련도 계산 (제목/본문 분리)
+                        title = self._clean_html(item.get("title", ""))
+                        description = self._clean_html(item.get("description", ""))
                         
-                        # 낮은 관련도 필터링
-                        if relevance_score < 0.3:
+                        relevance_score = self._calculate_relevance(stock, title, description)
+                        
+                        # 강화된 필터링 (0.5 이상만)
+                        if relevance_score < 0.5:
                             continue
                         
                         # URL 정리
@@ -405,10 +408,6 @@ class NewsCollector(BaseCollector):
                         exists = session.query(NewsArticle).filter_by(url=news_url).first()
                         if exists:
                             continue
-                        
-                        # 제목/설명 HTML 태그 제거
-                        title = self._clean_html(item.get("title", ""))
-                        description = self._clean_html(item.get("description", ""))
                         
                         # 날짜 파싱
                         pub_date_str = item.get("pubDate", "")
@@ -479,33 +478,41 @@ class NewsCollector(BaseCollector):
         
         return queries
     
-    def _calculate_relevance(self, stock: Stock, item: dict) -> float:
-        """뉴스 관련도 점수 계산 (0.0 ~ 1.0)"""
+    def _calculate_relevance(self, stock: Stock, title: str, description: str) -> float:
+        """뉴스 관련도 점수 계산 (0.0 ~ 1.0) - 강화된 버전"""
         score = 0.0
         
-        title = item.get("title", "").lower()
-        description = item.get("description", "").lower()
-        text = title + " " + description
+        title_lower = title.lower()
+        description_lower = description.lower()
         
-        # 1. 종목명 직접 언급 (+0.5)
-        if stock.name.lower() in text:
-            score += 0.5
+        # 1. 종목명 직접 언급
+        stock_name_lower = stock.name.lower()
+        if stock_name_lower in title_lower:
+            score += 0.6  # 제목에 종목명 → 매우 관련 높음
+        elif stock_name_lower in description_lower:
+            score += 0.4  # 본문에 종목명 → 관련 있음
         
-        # 2. 업종 언급 (+0.3)
-        if stock.sector and stock.sector.lower() in text:
-            score += 0.3
+        # 2. 업종 언급
+        if stock.sector and stock.sector != '기타':
+            sector_lower = stock.sector.lower()
+            if sector_lower in title_lower:
+                score += 0.3  # 제목에 업종
+            elif sector_lower in description_lower:
+                score += 0.2  # 본문에 업종
         
-        # 3. 업종 관련 키워드 (+0.2)
+        # 3. 업종 관련 키워드 (제목에만 적용, 낮은 가중치)
         sector_keywords = {
-            '반도체': ['반도체', '칩', '웨이퍼'],
-            '화장품': ['화장품', '뷰티', '마스크팩'],
-            '바이오': ['바이오', '신약', '치료제'],
+            '반도체': ['반도체', '칩', '웨이퍼', 'dram', 'nand'],
+            '화장품': ['화장품', 'k-뷰티', '뷰티', '마스크팩', '스킨케어'],
+            '바이오': ['바이오', '신약', '임상', '치료제'],
+            '자동차': ['전기차', 'ev', '배터리'],
+            '2차전지': ['배터리', '2차전지', 'lfp', 'ncm'],
         }
         
         if stock.sector in sector_keywords:
             for keyword in sector_keywords[stock.sector]:
-                if keyword in text:
-                    score += 0.2
+                if keyword in title_lower:
+                    score += 0.15  # 제목에 키워드 (낮은 가중치)
                     break
         
         return min(score, 1.0)
