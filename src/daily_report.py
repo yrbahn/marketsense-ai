@@ -16,6 +16,7 @@ import multiprocessing
 from src.storage.database import init_db
 from src.storage.models import Stock, PriceData
 from src.agents.signal_agent import SignalAgent
+from src.agents.macro_agent import MacroAgent
 from src.notifications.telegram_notifier import get_notifier
 from src.utils.helpers import load_config
 
@@ -166,6 +167,12 @@ def main():
     stocks = get_top_stocks(db, limit=200)
     logger.info(f"종목 {len(stocks)}개 조회 완료")
     
+    # 거시경제 분석
+    logger.info("거시경제 분석 시작...")
+    macro_agent = MacroAgent(config, db)
+    macro_analysis = macro_agent.analyze(lookback_days=90)
+    logger.info(f"거시경제 분석 완료: {macro_analysis.get('market_outlook', 'N/A')}")
+    
     # AI 분석 및 순위화
     logger.info("AI 분석 시작...")
     top_signals = analyze_and_rank(db, stocks, top_n=10)
@@ -173,10 +180,14 @@ def main():
     
     if not top_signals:
         logger.warning("매수 신호 없음")
+        # 매수 신호가 없어도 거시경제 분석은 전송
+        notifier = get_notifier()
+        notifier.send_macro_report(macro_analysis)
         return
     
-    # 시장 요약
+    # 시장 요약 (기존 함수 유지)
     market_summary = get_market_summary(db)
+    market_summary['macro_analysis'] = macro_analysis
     
     # Telegram 전송
     logger.info("Telegram 리포트 전송...")

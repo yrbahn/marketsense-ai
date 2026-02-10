@@ -188,7 +188,7 @@ class TelegramNotifier:
         
         Args:
             top_signals: 상위 신호 리스트 [(ticker, name, signal, confidence), ...]
-            market_summary: 시장 요약 {'kospi': ..., 'kosdaq': ...}
+            market_summary: 시장 요약 {'kospi': ..., 'kosdaq': ..., 'macro_analysis': {...}}
         """
         signal_kr = {
             "BUY": "매수",
@@ -202,9 +202,38 @@ class TelegramNotifier:
 **시장 현황**:
 KOSPI: {market_summary.get('kospi', 'N/A')}
 KOSDAQ: {market_summary.get('kosdaq', 'N/A')}
-
-🔥 **오늘의 TOP 신호**:
 """
+        
+        # 거시경제 분석 추가
+        macro = market_summary.get('macro_analysis')
+        if macro and not macro.get('error'):
+            outlook_emoji = {
+                'bullish': '📈',
+                'bearish': '📉',
+                'neutral': '➡️'
+            }.get(macro.get('market_outlook', 'neutral'), '➡️')
+            
+            risk_emoji = {
+                'low': '🟢',
+                'medium': '🟡',
+                'high': '🔴'
+            }.get(macro.get('risk_level', 'medium'), '🟡')
+            
+            message += f"""
+**거시경제 전망**:
+{outlook_emoji} 시장 전망: {macro.get('market_outlook', 'N/A').upper()}
+{risk_emoji} 리스크: {macro.get('risk_level', 'N/A').upper()}
+신뢰도: {macro.get('confidence', 0)*100:.0f}%
+
+주요 요인:
+"""
+            for factor in macro.get('key_factors', [])[:3]:
+                message += f"• {factor}\n"
+            
+            if macro.get('summary'):
+                message += f"\n{macro.get('summary')}\n"
+        
+        message += "\n🔥 **오늘의 TOP 신호**:\n"
         
         for i, (ticker, name, signal, conf) in enumerate(top_signals[:5], 1):
             emoji = {"BUY": "🚀", "SELL": "⚠️", "HOLD": "📊"}.get(signal, "📊")
@@ -273,6 +302,49 @@ KOSDAQ: {market_summary.get('kosdaq', 'N/A')}
 
 
 # 전역 인스턴스
+    def send_macro_report(self, macro_analysis: dict) -> bool:
+        """거시경제 리포트 (매수 신호 없을 때)
+        
+        Args:
+            macro_analysis: 거시경제 분석 결과
+        """
+        if macro_analysis.get('error'):
+            return False
+        
+        outlook_emoji = {
+            'bullish': '📈',
+            'bearish': '📉',
+            'neutral': '➡️'
+        }.get(macro_analysis.get('market_outlook', 'neutral'), '➡️')
+        
+        risk_emoji = {
+            'low': '🟢',
+            'medium': '🟡',
+            'high': '🔴'
+        }.get(macro_analysis.get('risk_level', 'medium'), '🟡')
+        
+        message = f"""
+📊 **거시경제 분석 리포트**
+
+{outlook_emoji} **시장 전망**: {macro_analysis.get('market_outlook', 'N/A').upper()}
+{risk_emoji} **리스크 수준**: {macro_analysis.get('risk_level', 'N/A').upper()}
+📊 **신뢰도**: {macro_analysis.get('confidence', 0)*100:.0f}%
+
+**주요 요인**:
+"""
+        
+        for factor in macro_analysis.get('key_factors', []):
+            message += f"• {factor}\n"
+        
+        if macro_analysis.get('summary'):
+            message += f"\n**요약**:\n{macro_analysis.get('summary')}\n"
+        
+        message += f"\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        message += "\n\n*오늘은 매수 신호가 없습니다*"
+        
+        return self.send(message)
+
+
 _notifier = None
 
 
