@@ -271,35 +271,28 @@ class TelegramBot:
             else:
                 fund_detail = f"• 밸류에이션: {fund_result.get('valuation', 'N/A')}\n• 요약: {fund_result.get('summary', '데이터 없음')[:100]}..."
             
-            # 각 에이전트별 전체 분석 표시
-            response_parts = []
+            # 각 에이전트별로 개별 메시지 전송
             
             # 1. 헤더
-            response_parts.append(f"""🤖 **AI 종합 분석**
+            header_msg = f"""🤖 **AI 종합 분석**
 
 **종목**: {name} ({ticker})
 
-━━━━━━━━━━━━━━━━━━━━━━""")
+분석을 시작합니다..."""
+            self.notifier.send_message(header_msg)
             
-            # 2. 뉴스 분석 (전체)
+            # 2. 뉴스 분석
             if news_result and not news_result.get('error'):
                 news_summary = news_result.get('summary', '데이터 없음')
-                response_parts.append(f"""
-📰 **뉴스 애널리스트 분석**
+                news_msg = f"""📰 **뉴스 애널리스트 분석**
 
 **감성**: {news_result.get('sentiment', 'N/A')}
 **신뢰도**: {news_result.get('confidence', 0)*100:.0f}%
 
-{news_summary}""")
-            else:
-                response_parts.append(f"""
-📰 **뉴스 애널리스트 분석**
-
-데이터 없음""")
+{news_summary}"""
+                self.notifier.send_message(news_msg)
             
-            response_parts.append("━━━━━━━━━━━━━━━━━━━━━━")
-            
-            # 3. 재무 분석 (전체)
+            # 3. 재무 분석
             if fund_result and not fund_result.get('error'):
                 fund_summary = fund_result.get('summary', '데이터 없음')
                 valuation_info = "N/A"
@@ -311,64 +304,47 @@ class TelegramBot:
                     valuation_kr = {'undervalued': '저평가', 'fair': '적정', 'overvalued': '고평가'}
                     valuation_info = valuation_kr.get(fund_result.get('valuation'), fund_result.get('valuation', 'N/A'))
                 
-                response_parts.append(f"""
-💰 **펀더멘털 애널리스트 분석**
+                fund_msg = f"""💰 **펀더멘털 애널리스트 분석**
 
 **밸류에이션**: {valuation_info}
 **신뢰도**: {fund_result.get('confidence', 0)*100:.0f}%
 
-{fund_summary}""")
-            else:
-                response_parts.append(f"""
-💰 **펀더멘털 애널리스트 분석**
-
-데이터 없음""")
+{fund_summary}"""
+                self.notifier.send_message(fund_msg)
             
-            response_parts.append("━━━━━━━━━━━━━━━━━━━━━━")
-            
-            # 4. 기술적 분석 (전체)
+            # 4. 기술적 분석
             if dyn_result and not dyn_result.get('error'):
                 dyn_summary = dyn_result.get('summary', '데이터 없음')
                 trend_kr = {'uptrend': '상승 추세', 'downtrend': '하락 추세', 'sideways': '횡보'}
                 signal_kr_dyn = {'buy': '매수', 'sell': '매도', 'hold': '보유'}
                 
-                response_parts.append(f"""
-📈 **기술적/수급 애널리스트 분석**
+                dyn_msg = f"""📈 **기술적/수급 애널리스트 분석**
 
 **추세**: {trend_kr.get(dyn_result.get('trend'), dyn_result.get('trend', 'N/A'))}
 **신호**: {signal_kr_dyn.get(dyn_result.get('signal'), dyn_result.get('signal', 'N/A'))}
 **신뢰도**: {dyn_result.get('confidence', 0)*100:.0f}%
 
-{dyn_summary}""")
-            else:
-                response_parts.append(f"""
-📈 **기술적/수급 애널리스트 분석**
-
-데이터 없음""")
+{dyn_summary}"""
+                self.notifier.send_message(dyn_msg)
             
-            response_parts.append("━━━━━━━━━━━━━━━━━━━━━━")
-            
-            # 5. 거시경제 분석 (있으면)
+            # 5. 거시경제 분석
             macro_result = results.get('macro')
             if macro_result and not macro_result.get('error'):
                 macro_summary = macro_result.get('summary', '데이터 없음')
                 outlook_kr = {'bullish': '강세', 'bearish': '약세', 'neutral': '중립'}
                 
-                response_parts.append(f"""
-🌍 **거시경제 애널리스트 분석**
+                macro_msg = f"""🌍 **거시경제 애널리스트 분석**
 
 **시장 전망**: {outlook_kr.get(macro_result.get('market_outlook'), macro_result.get('market_outlook', 'N/A'))}
 **거시경제 점수**: {macro_result.get('macro_score', 0)}
 **신뢰도**: {macro_result.get('confidence', 0)*100:.0f}%
 
-{macro_summary}""")
-                
-                response_parts.append("━━━━━━━━━━━━━━━━━━━━━━")
+{macro_summary}"""
+                self.notifier.send_message(macro_msg)
             
             # 6. 최종 투자 신호 (CIO)
             signal_summary = signal_result.get('summary', 'N/A')
-            response_parts.append(f"""
-🎯 **최종 투자 신호 (CIO)**
+            signal_msg = f"""🎯 **최종 투자 신호 (CIO)**
 
 **신호**: {signal_kr.get(signal_result.get('signal'), signal_result.get('signal'))}
 **신뢰도**: {signal_result.get('confidence', 0)*100:.0f}%
@@ -380,12 +356,11 @@ class TelegramBot:
 
 ⏰ {signal_result.get('analyzed_at', '')}
 
-_※ AI 분석은 참고용이며, 실제 투자는 본인 판단으로 하세요._""")
+_※ AI 분석은 참고용이며, 실제 투자는 본인 판단으로 하세요._"""
+            self.notifier.send_message(signal_msg)
             
-            # 전체 조합
-            response = '\n'.join(response_parts)
-            
-            return response
+            # 완료 메시지 반환 (이미 개별 메시지들을 전송했으므로)
+            return f"✅ {name} ({ticker}) 분석 완료! (5개 메시지 전송)"
             
         except Exception as e:
             logger.error(f"분석 오류: {e}")
