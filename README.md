@@ -9,11 +9,24 @@ LLM 멀티 에이전트 시스템으로 한국 주식 시장을 분석하는 **�
 ## 🎯 핵심 기능
 
 ### ✅ 5개 AI 에이전트 (Google Gemini)
-- **NewsAgent**: 뉴스 감성 분석 (긍정/중립/부정 + 신뢰도)
+- **NewsAgent**: 뉴스 감성 분석 (긍정/중립/부정 + 신뢰도) + 공시 정보
 - **FundamentalsAgent**: 재무 건전성 평가 (밸류에이션/수익성/성장성/안정성)
-- **DynamicsAgent**: 기술적 분석 (추세/지지저항/모멘텀/RSI/MACD)
+- **DynamicsAgent**: 기술적 분석 (추세/지지저항/모멘텀/RSI/MACD) + **수급 분석 (8개 지표)** 🆕
 - **MacroAgent**: 거시경제 영향 분석 (금리/환율/GDP/인플레이션)
 - **SignalAgent**: 최종 투자 신호 통합 (**BUY/SELL/HOLD** + 신뢰도)
+
+### ✅ 수급 분석 시스템 (8개 지표) 🆕
+- **네이버 증권 API** (2개):
+  - 거래량
+  - 외국인 보유율
+- **한국투자증권 OpenAPI** (6개):
+  - 개인 순매수
+  - 외국인 순매수
+  - 기관 순매수
+  - 융자잔고 (신용매수)
+  - 대주잔고 (신용매도)
+  - 공매도 (수량 + 비중)
+- **AI 분석**: 5-10일 추세 분석, 과열 감지, 종합 수급 시그널
 
 ### ✅ 백테스팅 엔진 (7개 전략)
 - **Buy & Hold**: 기본 벤치마크
@@ -35,8 +48,14 @@ LLM 멀티 에이전트 시스템으로 한국 주식 시장을 분석하는 **�
 ### ✅ 한국 증시 전용 데이터 (100% 특화)
 - **종목**: KRX 2,884개 (FinanceDataReader)
 - **뉴스**: 네이버 증권 모바일 API (~20,000건)
-- **재무제표**: DART 금융감독원 API (~10,000건)
+- **재무제표**: DART 금융감독원 API (~18,000건)
 - **주가**: FinanceDataReader (~700,000건)
+- **수급 데이터**: 네이버 + 한국투자증권 KIS API (8개 지표) 🆕
+  - 투자자별 매매 (개인/외국인/기관)
+  - 공매도 수량 및 비중
+  - 신용잔고 (융자/대주)
+  - 외국인 보유율 및 거래량
+- **공시 정보**: DART 전자공시 실시간 수집 🆕
 - **기술지표**: SMA, RSI, MACD, Bollinger Bands, ATR 자동 계산
 
 ### ✅ 인프라
@@ -66,6 +85,15 @@ GOOGLE_API_KEY=your-gemini-api-key
 # DART API (필수 - 재무제표)
 DART_API_KEY=your-dart-api-key
 
+# 한국투자증권 KIS OpenAPI (필수 - 수급 데이터) 🆕
+KIS_APP_KEY=your-kis-app-key
+KIS_APP_SECRET=your-kis-app-secret
+KIS_MOCK=false
+
+# 네이버 검색 API (선택 - 뉴스 확장)
+NAVER_CLIENT_ID=your-naver-client-id
+NAVER_CLIENT_SECRET=your-naver-client-secret
+
 # BOK API (선택 - 매크로)
 BOK_API_KEY=your-bok-api-key
 ```
@@ -73,6 +101,8 @@ BOK_API_KEY=your-bok-api-key
 **API 키 발급:**
 - **Gemini**: [Google AI Studio](https://aistudio.google.com/app/apikey) (무료)
 - **DART**: [DART 오픈API](https://opendart.fss.or.kr/) (무료, 즉시 발급)
+- **KIS OpenAPI**: [한국투자증권 API Portal](https://apiportal.koreainvestment.com/) (무료, 계좌 필요 없음) 🆕
+- **네이버 검색**: [Naver Developers](https://developers.naver.com/) (무료)
 - **BOK**: [한국은행 경제통계시스템](https://ecos.bok.or.kr/) (선택)
 
 ### 3. 데이터베이스 초기화
@@ -459,9 +489,11 @@ marketsense-ai/
 |--------|------|-----------|
 | `stocks` | KRX 종목 마스터 | 2,884 |
 | `news_articles` | 네이버 증권 뉴스 | ~20,000 |
-| `financial_statements` | DART 재무제표 | ~10,000 |
+| `financial_statements` | DART 재무제표 | ~18,000 |
 | `price_data` | 일별 OHLCV | ~700,000 |
 | `technical_indicators` | 기술적 지표 | ~700,000 |
+| `supply_demand_data` | 수급 데이터 (8개 지표) 🆕 | ~100,000 |
+| `disclosure_data` | DART 공시 정보 🆕 | ~10,000 |
 | `macro_reports` | 한국은행 보고서 | ~100 |
 | `macro_indicators` | BOK 경제통계 | ~1,000 |
 | `pipeline_runs` | 수집 이력 | ~100 |
@@ -497,6 +529,13 @@ marketsense-ai/
    - RSI 60 (강세)
    - 신뢰도: 75%
 
+🔥 수급: POSITIVE (신규!) 🆕
+   - 외국인 5일 순매수: +1.8M주
+   - 기관 5일 순매수: +880K주
+   - 공매도 비중: 2.21% (감소 중)
+   - 신용잔고: 정상 수준
+   - 종합: 긍정적
+
 🌍 매크로: POSITIVE
    - 금리 인하 기대
    - 원화 약세 수혜
@@ -527,22 +566,29 @@ marketsense-ai/
 
 ### ✅ 완료
 - [x] 한국 증시 데이터 수집 (Naver, DART, FDR)
+- [x] **수급 분석 시스템** (8개 지표: 투자자별 매매, 공매도, 신용잔고) 🆕
+- [x] **한국투자증권 KIS OpenAPI 통합** (실시간 수급 데이터) 🆕
+- [x] **DynamicsAgent 수급 분석 강화** (5-10일 추세, 과열 감지) 🆕
+- [x] **공시 정보 수집** (DART 전자공시) 🆕
 - [x] 5개 AI 에이전트 구현 (Google Gemini)
 - [x] **백테스팅 엔진** (7개 전략)
 - [x] **포트폴리오 최적화** (Markowitz MPT)
 - [x] **Telegram 알림 봇** (투자 신호, 급등/급락, 일일 리포트)
 - [x] **준실시간 데이터 모니터링** (1~60초 주기, 계좌 불필요)
+- [x] **RAG 파이프라인** (뉴스 벡터 DB, ChromaDB) 🆕
 - [x] Streamlit 대시보드
 - [x] CLI 분석 도구
 - [x] PostgreSQL 전환 (동시 쓰기)
 - [x] 자동화 (OpenClaw cron)
 
 ### 🚧 개선 예정
-- [ ] RAG 파이프라인 (뉴스/재무제표 벡터 DB)
+- [ ] 재무제표 벡터 DB (RAG 확장)
 - [ ] Discord 알림 봇
+- [ ] 기관 세분화 (투신, 연기금, 은행, 보험 등)
 - [ ] 추가 AI 전략 (강화학습)
 - [ ] 대화형 Telegram 봇 (명령어 인터페이스)
 - [ ] 실시간 WebSocket (증권사 API 연동)
+- [ ] LLM 캐싱 (비용 95% 절감)
 
 ## 🎓 참고 논문
 
