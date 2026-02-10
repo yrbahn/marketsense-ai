@@ -55,8 +55,8 @@ class RealtimeMonitor:
             {'price': float, 'change': float, 'volume': int, 'time': str}
         """
         try:
-            # 네이버 금융 API (JSON)
-            url = f"https://polling.finance.naver.com/api/realtime/domestic/stock/{ticker}"
+            # 네이버 금융 Polling API
+            url = f"https://polling.finance.naver.com/api/realtime?query=SERVICE_ITEM:{ticker}"
             
             response = self.session.get(url, timeout=3)
             
@@ -66,17 +66,26 @@ class RealtimeMonitor:
             
             data = response.json()
             
-            if not data or 'datas' not in data or not data['datas']:
+            # JSON 파싱
+            if not data or 'result' not in data:
                 return None
             
-            item = data['datas'][0]
+            result = data['result']
+            if 'areas' not in result or not result['areas']:
+                return None
+            
+            area = result['areas'][0]
+            if 'datas' not in area or not area['datas']:
+                return None
+            
+            item = area['datas'][0]
             
             return {
                 'price': float(item.get('nv', 0)),  # 현재가
                 'change': float(item.get('cv', 0)),  # 전일대비
                 'change_rate': float(item.get('cr', 0)),  # 등락률
                 'volume': int(item.get('aq', 0)),  # 거래량
-                'time': item.get('nt', datetime.now().strftime('%H:%M:%S'))  # 시간
+                'time': datetime.now().strftime('%H:%M:%S')  # 현재 시간
             }
             
         except Exception as e:
