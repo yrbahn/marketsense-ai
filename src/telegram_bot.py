@@ -151,10 +151,11 @@ class TelegramBot:
             agent = DynamicsAgent(self.config, self.db)
             results['dynamics'] = agent.analyze(ticker)
             
-            # 4. 거시경제 분석
-            logger.info(f"[MacroAgent] 분석 시작")
-            agent = MacroAgent(self.config, self.db)
-            results['macro'] = agent.analyze()
+            # 4. 거시경제 분석 (스킵 - 데이터 미비)
+            # logger.info(f"[MacroAgent] 분석 시작")
+            # agent = MacroAgent(self.config, self.db)
+            # results['macro'] = agent.analyze()
+            results['macro'] = None
             
             # 5. 최종 통합
             logger.info(f"[SignalAgent] {ticker} 통합 시작")
