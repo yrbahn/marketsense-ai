@@ -20,7 +20,8 @@ news:
       type: api
       base_url: "https://m.stock.naver.com/api/news/stock"
   lookback_days: 30
-  max_articles_per_stock: 20
+  max_articles_per_stock: 100  # 페이지당 20개 → 5페이지 (100개)
+  pages_to_collect: 5  # 여러 페이지 수집
 
 # ═══════════════════════════════════════════
 # 2. 재무제표 데이터 소스 (한국)

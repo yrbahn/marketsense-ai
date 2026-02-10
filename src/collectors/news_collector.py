@@ -32,6 +32,7 @@ class NewsCollector(BaseCollector):
         self.news_config = config.get("news", {})
         self.lookback_days = self.news_config.get("lookback_days", 7)
         self.max_articles = self.news_config.get("max_articles_per_stock", 50)
+        self.pages_to_collect = self.news_config.get("pages_to_collect", 5)
 
     def collect(self, tickers: list = None, **kwargs):
         """모든 소스에서 뉴스 수집"""
@@ -83,65 +84,67 @@ class NewsCollector(BaseCollector):
             stock_id = stock.id if stock else None
 
             try:
-                url = f"https://m.stock.naver.com/api/news/stock/{ticker}?pageSize=20&page=1"
-                resp = requests.get(url, headers=api_headers, timeout=10)
-
-                if resp.status_code != 200:
-                    continue
-
-                data = resp.json()
-                if not isinstance(data, list):
-                    continue
-
                 cutoff = datetime.now() - timedelta(days=self.lookback_days)
+                
+                # 여러 페이지 수집
+                for page in range(1, self.pages_to_collect + 1):
+                    url = f"https://m.stock.naver.com/api/news/stock/{ticker}?pageSize=20&page={page}"
+                    resp = requests.get(url, headers=api_headers, timeout=10)
 
-                for group in data:
-                    items = group.get("items", [])
-                    for article in items:
-                        article_id = article.get("id", "")
-                        title = article.get("title") or article.get("titleFull", "")
-                        body = article.get("body", "")
-                        office = article.get("officeName", "")
-                        dt_str = article.get("datetime", "")
+                    if resp.status_code != 200:
+                        break
 
-                        if not title or not article_id:
-                            continue
+                    data = resp.json()
+                    if not isinstance(data, list) or len(data) == 0:
+                        break
 
-                        # 날짜 파싱 (YYYYMMDDHHmm)
-                        pub_at = None
-                        try:
-                            pub_at = datetime.strptime(dt_str, "%Y%m%d%H%M")
-                        except (ValueError, TypeError):
-                            pass
+                    for group in data:
+                        items = group.get("items", [])
+                        for article in items:
+                            article_id = article.get("id", "")
+                            title = article.get("title") or article.get("titleFull", "")
+                            body = article.get("body", "")
+                            office = article.get("officeName", "")
+                            dt_str = article.get("datetime", "")
 
-                        if pub_at and pub_at < cutoff:
-                            continue
+                            if not title or not article_id:
+                                continue
 
-                        # 네이버 뉴스 URL 생성
-                        office_id = article.get("officeId", "")
-                        article_num = article.get("articleId", "")
-                        news_url = f"https://n.news.naver.com/mnews/article/{office_id}/{article_num}"
+                            # 날짜 파싱 (YYYYMMDDHHmm)
+                            pub_at = None
+                            try:
+                                pub_at = datetime.strptime(dt_str, "%Y%m%d%H%M")
+                            except (ValueError, TypeError):
+                                pass
 
-                        # 중복 체크
-                        exists = session.query(NewsArticle).filter_by(url=news_url).first()
-                        if exists:
-                            continue
+                            if pub_at and pub_at < cutoff:
+                                continue
 
-                        news = NewsArticle(
-                            stock_id=stock_id,
-                            ticker=ticker,
-                            title=title,
-                            summary=body[:500] if body else None,
-                            url=news_url,
-                            source="naver",
-                            author=office,
-                            published_at=pub_at,
-                            source_id=article_id,
-                            category="finance",
-                            related_tickers=[ticker],
-                        )
-                        session.add(news)
-                        count += 1
+                            # 네이버 뉴스 URL 생성
+                            office_id = article.get("officeId", "")
+                            article_num = article.get("articleId", "")
+                            news_url = f"https://n.news.naver.com/mnews/article/{office_id}/{article_num}"
+
+                            # 중복 체크
+                            exists = session.query(NewsArticle).filter_by(url=news_url).first()
+                            if exists:
+                                continue
+
+                            news = NewsArticle(
+                                stock_id=stock_id,
+                                ticker=ticker,
+                                title=title,
+                                summary=body[:500] if body else None,
+                                url=news_url,
+                                source="naver",
+                                author=office,
+                                published_at=pub_at,
+                                source_id=article_id,
+                                category="finance",
+                                related_tickers=[ticker],
+                            )
+                            session.add(news)
+                            count += 1
 
                 # 커밋 주기적으로
                 if idx % 50 == 0 and idx > 0:
