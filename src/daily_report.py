@@ -113,8 +113,8 @@ def main():
     db = init_db(config)
     
     # 상위 종목 조회
-    logger.info("시총 상위 50개 종목 조회...")
-    stocks = get_top_stocks(db, limit=50)
+    logger.info("시총 상위 200개 종목 조회...")
+    stocks = get_top_stocks(db, limit=200)
     logger.info(f"종목 {len(stocks)}개 조회 완료")
     
     # AI 분석 및 순위화
