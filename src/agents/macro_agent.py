@@ -46,7 +46,7 @@ class MacroAgent(BaseAgent):
             reports = (
                 session.query(MacroReport)
                 .filter(
-                    MacroReport.source == "bok",
+                    MacroReport.source_name.like("%한국은행%"),
                     MacroReport.published_at >= cutoff,
                 )
                 .order_by(MacroReport.published_at.desc())
@@ -57,8 +57,8 @@ class MacroAgent(BaseAgent):
             # 최근 경제 지표
             indicators = (
                 session.query(MacroIndicator)
-                .filter(MacroIndicator.source == "bok")
-                .order_by(MacroIndicator.observation_date.desc())
+                .filter(MacroIndicator.source.like("%bok%"))
+                .order_by(MacroIndicator.date.desc())
                 .limit(20)
                 .all()
             )
