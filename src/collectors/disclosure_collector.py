@@ -47,6 +47,9 @@ class DisclosureCollector(BaseCollector):
         
         self.base_url = "https://opendart.fss.or.kr/api"
         self.lookback_days = config.get("disclosure", {}).get("lookback_days", 30)
+        
+        # 회사코드 매핑 로드
+        self._load_corp_mapping()
 
     def collect(self, tickers: list = None, **kwargs):
         """주요 공시 수집"""
@@ -193,39 +196,32 @@ class DisclosureCollector(BaseCollector):
         
         return "기타"
     
+    def _load_corp_mapping(self):
+        """회사코드 매핑 로드"""
+        import json
+        from pathlib import Path
+        
+        cache_file = Path(__file__).parent.parent.parent / 'cache' / 'dart_corp_mapping.json'
+        
+        if not cache_file.exists():
+            logger.warning("[Disclosure] 매핑 파일 없음. scripts/build_dart_mapping.py 실행 필요")
+            self.corp_mapping = {}
+            return
+        
+        with open(cache_file, 'r', encoding='utf-8') as f:
+            self.corp_mapping = json.load(f)
+        
+        logger.info(f"[Disclosure] 회사코드 매핑 로드 완료: {len(self.corp_mapping)}개")
+    
     def _find_stock_by_corp_code(self, session, corp_code: str):
         """DART 회사코드로 종목 찾기"""
-        # OpenDartReader 사용하여 종목코드 조회
-        try:
-            import OpenDartReader
-            
-            dart = OpenDartReader(self.api_key)
-            
-            # corp_code로 회사 정보 조회
-            # OpenDartReader의 find_corp_code 사용
-            # 하지만 더 간단하게 전체 매핑 사용
-            
-            # 캐시 확인
-            if not hasattr(self, '_corp_code_cache'):
-                self._corp_code_cache = {}
-            
-            if corp_code in self._corp_code_cache:
-                ticker = self._corp_code_cache[corp_code]
-                return session.query(Stock).filter_by(ticker=ticker).first()
-            
-            # OpenDartReader로 종목코드 조회 시도
-            # (매핑 테이블 사용)
-            corp_list = dart.list()
-            if corp_list is not None and not corp_list.empty:
-                match = corp_list[corp_list['corp_code'] == corp_code]
-                if not match.empty:
-                    ticker = match.iloc[0]['stock_code']
-                    if ticker and ticker != ' ':
-                        ticker = ticker.strip()
-                        self._corp_code_cache[corp_code] = ticker
-                        return session.query(Stock).filter_by(ticker=ticker).first()
-            
-        except Exception as e:
-            logger.debug(f"[Disclosure] corp_code 매칭 실패: {e}")
+        # 매핑 조회
+        if corp_code not in self.corp_mapping:
+            return None
         
-        return None
+        ticker = self.corp_mapping[corp_code]['ticker']
+        
+        # DB에서 종목 조회
+        stock = session.query(Stock).filter_by(ticker=ticker).first()
+        
+        return stock
