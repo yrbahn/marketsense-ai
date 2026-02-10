@@ -199,15 +199,33 @@ def main():
         logger.info("✅ 리포트 전송 완료")
         
         # 개별 신호 알림 (상위 3개만)
+        signal_agent = SignalAgent(config, db)
+        
         for ticker, name, signal, conf in top_signals[:3]:
             logger.info(f"[{ticker}] 신호 알림 전송...")
-            # 여기서 더 상세한 분석 결과를 가져와서 전송 가능
+            
+            # 상세 분석 결과 가져오기
+            try:
+                detailed_analysis = signal_agent.analyze(ticker)
+                
+                # reasons 추출
+                reasons = {
+                    'news_summary': detailed_analysis.get('news_summary', ''),
+                    'fundamentals_summary': detailed_analysis.get('fundamentals_summary', ''),
+                    'dynamics_summary': detailed_analysis.get('dynamics_summary', ''),
+                    'reasoning': detailed_analysis.get('reasoning', '')
+                }
+                
+            except Exception as e:
+                logger.error(f"[{ticker}] 상세 분석 실패: {e}")
+                reasons = {}
+            
             notifier.send_signal_alert(
                 ticker=ticker,
                 stock_name=name,
                 signal=signal,
                 confidence=conf,
-                reasons={}  # 실제로는 상세 분석 결과 전달
+                reasons=reasons
             )
     else:
         logger.error("❌ 리포트 전송 실패")

@@ -10,6 +10,9 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 from .base_agent import BaseAgent
+from .news_agent import NewsAgent
+from .fundamentals_agent import FundamentalsAgent
+from .dynamics_agent import DynamicsAgent
 
 logger = logging.getLogger("marketsense")
 
@@ -144,7 +147,7 @@ class SignalAgent(BaseAgent):
             }
     
     def analyze(self, ticker: str) -> Dict[str, Any]:
-        """종목 종합 분석 (간소화 버전)
+        """종목 종합 분석 (완전 구현)
         
         Args:
             ticker: 종목 코드
@@ -154,24 +157,45 @@ class SignalAgent(BaseAgent):
         """
         logger.info(f"[SignalAgent] {ticker} 종합 분석 시작")
         
-        # 간소화된 분석 (4개 에이전트 실행 없이 바로 신호 생성)
-        # 실제 환경에서는 4개 에이전트를 모두 실행해야 함
-        
-        prompt = f"""종목 코드 {ticker}에 대한 투자 신호를 생성하세요.
-
-현재 시장 상황을 고려하여 BUY/SELL/HOLD 중 하나를 선택하고,
-신뢰도와 리스크 수준을 평가하세요.
-
-JSON 형식으로 답변:
-{{
-  "signal": "BUY|SELL|HOLD",
-  "confidence": 0.0-1.0,
-  "risk_level": "low|medium|high",
-  "summary": "투자 의견 한 줄 요약"
-}}
-"""
-        
         try:
+            # 1. NewsAgent 실행
+            news_agent = NewsAgent(self.config, self.db)
+            news_result = news_agent.analyze(ticker)
+            logger.debug(f"[SignalAgent] {ticker} 뉴스 분석 완료")
+            
+            # 2. FundamentalsAgent 실행
+            fundamentals_agent = FundamentalsAgent(self.config, self.db)
+            fundamentals_result = fundamentals_agent.analyze(ticker)
+            logger.debug(f"[SignalAgent] {ticker} 펀더멘털 분석 완료")
+            
+            # 3. DynamicsAgent 실행
+            dynamics_agent = DynamicsAgent(self.config, self.db)
+            dynamics_result = dynamics_agent.analyze(ticker)
+            logger.debug(f"[SignalAgent] {ticker} 기술적 분석 완료")
+            
+            # 4. 3개 에이전트 결과 통합
+            prompt = f"""{self.SYSTEM_PROMPT}
+
+종목 코드: {ticker}
+
+**뉴스 분석 (NewsAgent):**
+{news_result.get('summary', 'N/A')}
+- 감성: {news_result.get('sentiment', 'N/A')}
+- 영향: {news_result.get('impact', 'N/A')}
+
+**펀더멘털 분석 (FundamentalsAgent):**
+{fundamentals_result.get('summary', 'N/A')}
+- 밸류에이션: {fundamentals_result.get('valuation', 'N/A')}
+- 재무 건전성: {fundamentals_result.get('financial_health', 'N/A')}
+
+**기술적/수급 분석 (DynamicsAgent):**
+{dynamics_result.get('summary', 'N/A')}
+- 추세: {dynamics_result.get('trend', 'N/A')}
+- 모멘텀: {dynamics_result.get('momentum', 'N/A')}
+
+위 3개 에이전트의 분석 결과를 종합하여 최종 투자 신호를 생성하세요.
+"""
+            
             response_text = self.generate(prompt)
             import json
             
@@ -183,6 +207,14 @@ JSON 형식으로 답변:
             result = json.loads(response_text.strip())
             result["ticker"] = ticker
             result["analyzed_at"] = datetime.now().isoformat()
+            
+            # 각 에이전트 결과 포함
+            result["news_summary"] = news_result.get('summary', '')
+            result["news_sentiment"] = news_result.get('sentiment', 'N/A')
+            result["fundamentals_summary"] = fundamentals_result.get('summary', '')
+            result["fundamentals_valuation"] = fundamentals_result.get('valuation', 'N/A')
+            result["dynamics_summary"] = dynamics_result.get('summary', '')
+            result["dynamics_trend"] = dynamics_result.get('trend', 'N/A')
             
             logger.info(
                 f"[SignalAgent] {ticker} 분석 완료: {result.get('signal')} "
