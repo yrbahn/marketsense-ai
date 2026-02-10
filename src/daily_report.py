@@ -9,7 +9,9 @@
 import sys
 import logging
 from datetime import datetime, timedelta
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Dict, Any
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing
 
 from src.storage.database import init_db
 from src.storage.models import Stock, PriceData
@@ -59,42 +61,89 @@ def get_market_summary(db) -> dict:
     }
 
 
+def analyze_single_stock(args: Tuple[str, str]) -> Optional[Tuple[str, str, str, float]]:
+    """단일 종목 분석 (병렬 처리용 워커)
+    
+    Args:
+        args: (ticker, name) 튜플
+        
+    Returns:
+        (ticker, name, signal, confidence) 또는 None
+    """
+    ticker, name = args
+    
+    try:
+        # 각 프로세스에서 별도로 초기화
+        config = load_config()
+        db = init_db(config)
+        signal_agent = SignalAgent(config, db)
+        
+        # AI 분석 실행
+        analysis = signal_agent.analyze(ticker)
+        
+        if analysis:
+            signal = analysis.get("signal", "HOLD")
+            confidence = analysis.get("confidence", 0.0)
+            
+            # BUY 신호이고 신뢰도가 높은 것만
+            if signal == "BUY" and confidence >= 0.7:
+                return (ticker, name, signal, confidence)
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"[{ticker}] 분석 실패: {e}")
+        return None
+
+
 def analyze_and_rank(db, stocks: List[Tuple[str, str]], 
-                    top_n: int = 10) -> List[Tuple[str, str, str, float]]:
-    """종목 분석 및 순위화
+                    top_n: int = 10, 
+                    max_workers: int = None) -> List[Tuple[str, str, str, float]]:
+    """종목 분석 및 순위화 (병렬 처리)
     
     Args:
         db: 데이터베이스
         stocks: 분석할 종목 리스트
         top_n: 상위 몇 개 반환
+        max_workers: 병렬 프로세스 수 (None = CPU 코어 수)
         
     Returns:
         [(ticker, name, signal, confidence), ...] 리스트
     """
-    config = load_config()
-    signal_agent = SignalAgent(config)
+    if max_workers is None:
+        max_workers = multiprocessing.cpu_count()
+    
+    logger.info(f"병렬 처리 시작: {len(stocks)}개 종목, {max_workers}개 프로세스")
     
     results = []
+    completed = 0
     
-    for ticker, name in stocks:
-        try:
-            logger.info(f"[{ticker}] {name} 분석 중...")
+    # ProcessPoolExecutor로 병렬 처리
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # 모든 종목 제출
+        future_to_stock = {
+            executor.submit(analyze_single_stock, (ticker, name)): (ticker, name)
+            for ticker, name in stocks
+        }
+        
+        # 완료된 작업 수집
+        for future in as_completed(future_to_stock):
+            ticker, name = future_to_stock[future]
+            completed += 1
             
-            # AI 분석 실행
-            analysis = signal_agent.analyze(ticker, db)
-            
-            if analysis:
-                signal = analysis.get("signal", "HOLD")
-                confidence = analysis.get("confidence", 0.0)
-                
-                # BUY 신호이고 신뢰도가 높은 것만
-                if signal == "BUY" and confidence >= 0.7:
-                    results.append((ticker, name, signal, confidence))
-                    logger.info(f"[{ticker}] {signal} ({confidence*100:.0f}%)")
-            
-        except Exception as e:
-            logger.error(f"[{ticker}] 분석 실패: {e}")
-            continue
+            try:
+                result = future.result()
+                if result:
+                    results.append(result)
+                    ticker, name, signal, confidence = result
+                    logger.info(f"[{completed}/{len(stocks)}] {ticker} {name}: {signal} ({confidence*100:.0f}%)")
+                else:
+                    logger.debug(f"[{completed}/{len(stocks)}] {ticker} {name}: 신호 없음")
+                    
+            except Exception as e:
+                logger.error(f"[{ticker}] 처리 오류: {e}")
+    
+    logger.info(f"분석 완료: {len(results)}개 매수 신호 발견")
     
     # 신뢰도 순으로 정렬
     results.sort(key=lambda x: x[3], reverse=True)
