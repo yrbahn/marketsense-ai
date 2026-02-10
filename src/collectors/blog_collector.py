@@ -79,6 +79,15 @@ class BlogCollector(BaseCollector):
                         logger.debug(f"[Blog] {stock.ticker} 실패: {e}")
                         continue
 
+                # 실시간 벡터화
+                if total > 0:
+                    try:
+                        logger.info(f"[Blog] 즉시 벡터화 시작: {total}건")
+                        self._vectorize_collected_blogs(session, run.started_at)
+                        logger.info(f"[Blog] 벡터화 완료")
+                    except Exception as ve:
+                        logger.error(f"[Blog] 벡터화 실패: {ve}")
+
                 self._finish_run(run, total)
 
             except Exception as e:
@@ -237,3 +246,44 @@ class BlogCollector(BaseCollector):
 
         # 최대 1.0
         return min(score, 1.0)
+
+    def _vectorize_collected_blogs(self, session, started_at):
+        """수집된 블로그 즉시 벡터화
+        
+        블로그는 뉴스 컬렉션에 추가 (유사한 콘텐츠)
+        """
+        from src.rag.vector_store import VectorStore
+        
+        # 이번 수집 이후 블로그만 가져오기
+        new_blogs = session.query(BlogPost).filter(
+            BlogPost.collected_at >= started_at
+        ).all()
+        
+        if not new_blogs:
+            return
+        
+        # 배치 단위로 벡터화 (뉴스 형식으로 변환)
+        vs = VectorStore()
+        batch_size = 1000
+        
+        for i in range(0, len(new_blogs), batch_size):
+            batch = new_blogs[i:i + batch_size]
+            blog_data = []
+            
+            for blog in batch:
+                stock = session.query(Stock).filter_by(id=blog.stock_id).first()
+                ticker = stock.ticker if stock else ''
+                
+                # 블로그를 뉴스 형식으로 변환
+                blog_data.append({
+                    'id': f"blog_{blog.id}",  # blog_ 접두사로 구분
+                    'ticker': ticker,
+                    'title': blog.title or '',
+                    'content': blog.description or '',
+                    'published_at': blog.post_date,
+                    'source': f'blog_{blog.blogger_name}',  # 블로거명
+                    'url': blog.blog_url or ''
+                })
+            
+            vs.add_news(blog_data)  # 뉴스 컬렉션에 추가
+            logger.info(f"  → 블로그 벡터화: {i + len(batch)}/{len(new_blogs)}")
