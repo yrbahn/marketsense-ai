@@ -95,6 +95,46 @@ class TelegramNotifier:
             confidence: 신뢰도 (0~1)
             reasons: 각 에이전트별 분석 결과
         """
+        # 한글 번역 맵
+        signal_kr = {
+            "BUY": "매수",
+            "SELL": "매도",
+            "HOLD": "보유"
+        }
+        
+        sentiment_kr = {
+            "POSITIVE": "긍정적",
+            "NEGATIVE": "부정적",
+            "NEUTRAL": "중립",
+            "N/A": "분석불가"
+        }
+        
+        valuation_kr = {
+            "UNDERVALUED": "저평가",
+            "OVERVALUED": "고평가",
+            "FAIR": "적정가",
+            "STRONG": "우수",
+            "STABLE": "안정적",
+            "GOOD": "양호",
+            "N/A": "분석불가"
+        }
+        
+        trend_kr = {
+            "UPTREND": "상승추세",
+            "DOWNTREND": "하락추세",
+            "RANGING": "횡보",
+            "CONSOLIDATION": "조정",
+            "STRONG BUY": "강한 매수세",
+            "N/A": "분석불가"
+        }
+        
+        impact_kr = {
+            "POSITIVE": "긍정적",
+            "NEGATIVE": "부정적",
+            "NEUTRAL": "중립",
+            "N/A": "분석불가"
+        }
+        
         emoji_map = {
             "BUY": "🚀",
             "SELL": "⚠️",
@@ -102,33 +142,42 @@ class TelegramNotifier:
         }
         
         emoji = emoji_map.get(signal, "📊")
+        signal_text = signal_kr.get(signal, signal)
         
         message = f"""
-{emoji} **{signal} 신호!**
+{emoji} **{signal_text} 신호!**
 
 **종목**: {stock_name} ({ticker})
-**신호**: {signal}
+**신호**: {signal_text}
 **신뢰도**: {confidence * 100:.0f}%
 
 **AI 분석**:
 """
         
-        # 각 에이전트 결과 추가
+        # 각 에이전트 결과 추가 (한글로)
         if "news" in reasons:
             news = reasons["news"]
-            message += f"📰 뉴스: {news.get('sentiment', 'N/A').upper()}\n"
+            sentiment = news.get('sentiment', 'N/A').upper()
+            sentiment_text = sentiment_kr.get(sentiment, sentiment)
+            message += f"📰 뉴스: {sentiment_text}\n"
             
         if "fundamentals" in reasons:
             fund = reasons["fundamentals"]
-            message += f"💰 재무: {fund.get('valuation', 'N/A').upper()}\n"
+            valuation = fund.get('valuation', 'N/A').upper()
+            valuation_text = valuation_kr.get(valuation, valuation)
+            message += f"💰 재무: {valuation_text}\n"
             
         if "dynamics" in reasons:
             dyn = reasons["dynamics"]
-            message += f"📈 기술: {dyn.get('trend', 'N/A').upper()}\n"
+            trend = dyn.get('trend', 'N/A').upper()
+            trend_text = trend_kr.get(trend, trend)
+            message += f"📈 기술: {trend_text}\n"
             
         if "macro" in reasons:
             macro = reasons["macro"]
-            message += f"🌍 매크로: {macro.get('impact', 'N/A').upper()}\n"
+            impact = macro.get('impact', 'N/A').upper()
+            impact_text = impact_kr.get(impact, impact)
+            message += f"🌍 매크로: {impact_text}\n"
         
         message += f"\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         
@@ -141,6 +190,12 @@ class TelegramNotifier:
             top_signals: 상위 신호 리스트 [(ticker, name, signal, confidence), ...]
             market_summary: 시장 요약 {'kospi': ..., 'kosdaq': ...}
         """
+        signal_kr = {
+            "BUY": "매수",
+            "SELL": "매도",
+            "HOLD": "보유"
+        }
+        
         message = f"""
 📊 **MarketSenseAI 일일 리포트**
 
@@ -153,7 +208,8 @@ KOSDAQ: {market_summary.get('kosdaq', 'N/A')}
         
         for i, (ticker, name, signal, conf) in enumerate(top_signals[:5], 1):
             emoji = {"BUY": "🚀", "SELL": "⚠️", "HOLD": "📊"}.get(signal, "📊")
-            message += f"{i}. {name} ({ticker}) - {emoji} {signal} ({conf*100:.0f}%)\n"
+            signal_text = signal_kr.get(signal, signal)
+            message += f"{i}. {name} ({ticker}) - {emoji} {signal_text} ({conf*100:.0f}%)\n"
         
         message += f"\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         
