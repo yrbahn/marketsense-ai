@@ -159,6 +159,7 @@ class VectorStore:
         self,
         query: str,
         ticker: Optional[str] = None,
+        date_after: Optional[str] = None,
         top_k: int = 10
     ) -> List[Dict]:
         """뉴스 검색
@@ -166,6 +167,7 @@ class VectorStore:
         Args:
             query: 검색 쿼리
             ticker: 종목 코드 (필터링)
+            date_after: 이 날짜 이후 뉴스만 (ISO format: YYYY-MM-DD)
             top_k: 반환 개수
             
         Returns:
@@ -174,8 +176,19 @@ class VectorStore:
         # 쿼리 임베딩
         query_embedding = self.embedding_model.encode([query]).tolist()[0]
         
-        # 검색
-        where = {"ticker": ticker} if ticker else None
+        # 필터 조건 구성
+        where = None
+        if ticker and date_after:
+            where = {
+                "$and": [
+                    {"ticker": ticker},
+                    {"published_at": {"$gte": date_after}}
+                ]
+            }
+        elif ticker:
+            where = {"ticker": ticker}
+        elif date_after:
+            where = {"published_at": {"$gte": date_after}}
         
         results = self.news_collection.query(
             query_embeddings=[query_embedding],

@@ -36,9 +36,9 @@ class NewsAgent(BaseAgent):
 }
 """
 
-    def analyze(self, ticker: str, lookback_days: int = 7) -> Dict[str, Any]:
+    def analyze(self, ticker: str, lookback_days: int = 7, use_rag: bool = True) -> Dict[str, Any]:
         """종목 뉴스 분석"""
-        logger.info(f"[NewsAgent] {ticker} 뉴스 분석 시작 (최근 {lookback_days}일)")
+        logger.info(f"[NewsAgent] {ticker} 뉴스 분석 시작 (최근 {lookback_days}일, RAG={use_rag})")
 
         with self.db.get_session() as session:
             # 종목 정보
@@ -48,16 +48,62 @@ class NewsAgent(BaseAgent):
 
             # 최근 뉴스 가져오기
             cutoff = datetime.now() - timedelta(days=lookback_days)
-            news_list = (
-                session.query(NewsArticle)
-                .filter(
-                    NewsArticle.ticker == ticker,
-                    NewsArticle.published_at >= cutoff,
+            
+            if use_rag:
+                # 방법 1: 시간 윈도우 + RAG
+                try:
+                    from src.rag.vector_store import VectorStore
+                    
+                    # RAG 검색 (관련성 우선, 많이 가져옴)
+                    vs = VectorStore()
+                    
+                    rag_results = vs.search_news(
+                        query=f"{stock.name} 주가 실적 전망 분석",
+                        ticker=ticker,
+                        top_k=50  # 많이 가져온 후 시간 필터링
+                    )
+                    
+                    # RAG 결과를 DB 객체로 매핑하고 시간 필터링
+                    if rag_results:
+                        rag_ids = [r['id'].replace('news_', '') for r in rag_results if r['id'].startswith('news_')]
+                        
+                        news_list = (
+                            session.query(NewsArticle)
+                            .filter(
+                                NewsArticle.id.in_([int(i) for i in rag_ids if i.isdigit()]),
+                                NewsArticle.published_at >= cutoff  # 시간 윈도우
+                            )
+                            .order_by(NewsArticle.published_at.desc())
+                            .limit(20)  # 최종 20개
+                            .all()
+                        )
+                        
+                        logger.info(f"[NewsAgent] RAG 검색: {len(news_list)}개 (최근 {lookback_days}일)")
+                    else:
+                        news_list = []
+                    
+                    # RAG 결과 없으면 fallback
+                    if not news_list:
+                        logger.warning(f"[NewsAgent] RAG 결과 없음, SQL fallback")
+                        use_rag = False
+                
+                except Exception as e:
+                    logger.warning(f"[NewsAgent] RAG 실패 ({e}), SQL fallback")
+                    use_rag = False
+            
+            if not use_rag:
+                # Fallback: 기존 SQL 방식 (최신순)
+                news_list = (
+                    session.query(NewsArticle)
+                    .filter(
+                        NewsArticle.ticker == ticker,
+                        NewsArticle.published_at >= cutoff,
+                    )
+                    .order_by(NewsArticle.published_at.desc())
+                    .limit(20)
+                    .all()
                 )
-                .order_by(NewsArticle.published_at.desc())
-                .limit(20)
-                .all()
-            )
+                logger.info(f"[NewsAgent] SQL 검색: {len(news_list)}개")
 
             if not news_list:
                 return {
