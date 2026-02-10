@@ -290,38 +290,84 @@ class TelegramBot:
             else:
                 fund_detail = f"• 밸류에이션: {fund_result.get('valuation', 'N/A')}\n• 요약: {fund_result.get('summary', '데이터 없음')[:100]}..."
             
-            response = f"""🤖 **AI 종합 분석**
+            # 각 에이전트별 전체 분석 표시
+            response_parts = []
+            
+            # 1. 헤더
+            response_parts.append(f"""🤖 **AI 종합 분석**
 
 **종목**: {name} ({ticker})
 
-━━━━━━━━━━━━━━━━━━━━━━
-
+━━━━━━━━━━━━━━━━━━━━━━""")
+            
+            # 2. 뉴스 분석 (전체)
+            news_summary = news_result.get('summary', '데이터 없음')
+            response_parts.append(f"""
 📰 **뉴스 분석**
-• 감성: {news_result.get('sentiment', 'N/A')}
-• 요약: {news_result.get('summary', '데이터 없음')[:100]}...
 
-💰 **재무 분석** ⭐
-{fund_detail}
+**감성**: {news_result.get('sentiment', 'N/A')}
+**신뢰도**: {news_result.get('confidence', 0)*100:.0f}%
 
-📈 **기술적 분석**
-{tech_detail}
+{news_summary}
 
-━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━""")
+            
+            # 3. 재무 분석 (전체)
+            fund_summary = fund_result.get('summary', '데이터 없음')
+            valuation_info = "N/A"
+            if isinstance(fund_result.get('valuation'), dict):
+                val = fund_result['valuation']
+                valuation_kr = {'undervalued': '저평가', 'fair': '적정', 'overvalued': '고평가'}
+                valuation_info = valuation_kr.get(val.get('rating'), val.get('rating', 'N/A'))
+            else:
+                valuation_kr = {'undervalued': '저평가', 'fair': '적정', 'overvalued': '고평가'}
+                valuation_info = valuation_kr.get(fund_result.get('valuation'), fund_result.get('valuation', 'N/A'))
+            
+            response_parts.append(f"""
+💰 **재무 분석**
 
-🎯 **최종 투자 신호**
-• **신호**: {signal_kr.get(signal_result.get('signal'), signal_result.get('signal'))}
-• **신뢰도**: {signal_result.get('confidence', 0)*100:.0f}%
-• **리스크**: {risk_kr.get(signal_result.get('risk_level'), 'N/A')}
+**밸류에이션**: {valuation_info}
+**신뢰도**: {fund_result.get('confidence', 0)*100:.0f}%
 
-**종합 의견**:
-{signal_result.get('summary', 'N/A')}
+{fund_summary}
+
+━━━━━━━━━━━━━━━━━━━━━━""")
+            
+            # 4. 기술적 분석 (전체)
+            dyn_summary = dyn_result.get('summary', '데이터 없음')
+            trend_kr = {'uptrend': '상승 추세', 'downtrend': '하락 추세', 'sideways': '횡보'}
+            signal_kr_dyn = {'buy': '매수', 'sell': '매도', 'hold': '보유'}
+            
+            response_parts.append(f"""
+📈 **기술적/수급 분석**
+
+**추세**: {trend_kr.get(dyn_result.get('trend'), dyn_result.get('trend', 'N/A'))}
+**신호**: {signal_kr_dyn.get(dyn_result.get('signal'), dyn_result.get('signal', 'N/A'))}
+**신뢰도**: {dyn_result.get('confidence', 0)*100:.0f}%
+
+{dyn_summary}
+
+━━━━━━━━━━━━━━━━━━━━━━""")
+            
+            # 5. 최종 투자 신호
+            signal_summary = signal_result.get('summary', 'N/A')
+            response_parts.append(f"""
+🎯 **최종 투자 신호 (CIO)**
+
+**신호**: {signal_kr.get(signal_result.get('signal'), signal_result.get('signal'))}
+**신뢰도**: {signal_result.get('confidence', 0)*100:.0f}%
+**리스크**: {risk_kr.get(signal_result.get('risk_level'), 'N/A')}
+
+{signal_summary}
 
 ━━━━━━━━━━━━━━━━━━━━━━
 
 ⏰ {signal_result.get('analyzed_at', '')}
 
-_※ AI 분석은 참고용이며, 실제 투자는 본인 판단으로 하세요._
-"""
+_※ AI 분석은 참고용이며, 실제 투자는 본인 판단으로 하세요._""")
+            
+            # 전체 조합
+            response = '\n'.join(response_parts)
             
             return response
             
