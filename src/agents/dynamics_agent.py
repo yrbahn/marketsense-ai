@@ -186,16 +186,25 @@ class DynamicsAgent(BaseAgent):
             # 지표 요약
             indicators_text = ""
             if latest_indicators:
+                sma20_text = f"{latest_indicators.sma_20:,.0f}원 (현재가: {current_price:,.0f}원)" if latest_indicators.sma_20 else 'N/A'
+                sma50_text = f"{latest_indicators.sma_50:,.0f}원" if latest_indicators.sma_50 else 'N/A'
+                sma200_text = f"{latest_indicators.sma_200:,.0f}원" if latest_indicators.sma_200 else 'N/A'
+                rsi_text = f"{latest_indicators.rsi_14:.1f}" if latest_indicators.rsi_14 else 'N/A'
+                macd_text = f"{latest_indicators.macd:.2f}" if latest_indicators.macd else 'N/A'
+                signal_text = f"{latest_indicators.macd_signal:.2f}" if latest_indicators.macd_signal else 'N/A'
+                bb_upper_text = f"{latest_indicators.bb_upper:,.0f}원" if latest_indicators.bb_upper else 'N/A'
+                bb_lower_text = f"{latest_indicators.bb_lower:,.0f}원" if latest_indicators.bb_lower else 'N/A'
+                
                 indicators_text = f"""
 기술적 지표 ({latest_indicators.date}):
-- SMA20: {latest_indicators.sma_20:,.0f}원 (현재가: {current_price:,.0f}원)" if latest_indicators.sma_20 else 'N/A'}
-- SMA50: {latest_indicators.sma_50:,.0f}원" if latest_indicators.sma_50 else 'N/A'}
-- SMA200: {latest_indicators.sma_200:,.0f}원" if latest_indicators.sma_200 else 'N/A'}
-- RSI(14): {latest_indicators.rsi_14:.1f}" if latest_indicators.rsi_14 else 'N/A'}
-- MACD: {latest_indicators.macd:.2f}" if latest_indicators.macd else 'N/A'}
-- Signal: {latest_indicators.macd_signal:.2f}" if latest_indicators.macd_signal else 'N/A'}
-- 볼린저밴드 상단: {latest_indicators.bb_upper:,.0f}원" if latest_indicators.bb_upper else 'N/A'}
-- 볼린저밴드 하단: {latest_indicators.bb_lower:,.0f}원" if latest_indicators.bb_lower else 'N/A'}
+- SMA20: {sma20_text}
+- SMA50: {sma50_text}
+- SMA200: {sma200_text}
+- RSI(14): {rsi_text}
+- MACD: {macd_text}
+- Signal: {signal_text}
+- 볼린저밴드 상단: {bb_upper_text}
+- 볼린저밴드 하단: {bb_lower_text}
 """
 
             # Gemini로 분석
