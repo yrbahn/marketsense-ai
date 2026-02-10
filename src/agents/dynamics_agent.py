@@ -41,6 +41,12 @@ class DynamicsAgent(BaseAgent):
    - 거래량 추세 (증가/감소)
    - 가격-거래량 괴리
    - 급증/급감 시그널
+
+4. 수급 분석 (중요!)
+   - 투자자별 순매수: 외국인/기관 매수 → 긍정적, 순매도 → 부정적
+   - 공매도: 급증 → 부정적, 감소 → 긍정적
+   - 신용잔고: 융자 급증 → 과열 위험, 감소 → 건전
+   - 외국인 보유율: 상승 → 긍정적, 하락 → 부정적
    
 4. 패턴 인식
    - 차트 패턴 (헤드앤숄더, 삼각수렴 등)
@@ -68,6 +74,23 @@ class DynamicsAgent(BaseAgent):
     "rsi": {"value": 숫자, "status": "과매수|중립|과매도"},
     "macd": {"signal": "매수|매도|중립", "strength": "강|중|약"},
     "volume": {"trend": "증가|감소|보합", "signal": "긍정|부정|중립"}
+  },
+  
+  "supply_demand": {
+    "investor_trend": {
+      "foreign_5d": "순매수|순매도",
+      "institution_5d": "순매수|순매도",
+      "overall_signal": "긍정적|부정적|중립"
+    },
+    "short_selling": {
+      "trend": "증가|감소|보합",
+      "signal": "긍정적|부정적|중립"
+    },
+    "credit_balance": {
+      "margin_trend": "증가|감소|보합",
+      "risk_level": "과열|정상|건전"
+    },
+    "summary": "수급 종합 판단 (2-3문장)"
   },
   
   "patterns": {
@@ -194,17 +217,121 @@ class DynamicsAgent(BaseAgent):
             )
             
             if supply_demand_data:
-                supply_demand_text = "\n수급 분석 (최근 10일):\n"
-                for sd in supply_demand_data[:10]:
-                    date_str = sd.date.strftime('%Y-%m-%d')
-                    foreign_text = f"{sd.foreign_ownership:.2f}%" if sd.foreign_ownership else "N/A"
-                    supply_demand_text += f"  {date_str}: 외국인보유 {foreign_text}, "
-                    supply_demand_text += f"거래량 {sd.volume:,}주\n" if sd.volume else "거래량 N/A\n"
+                supply_demand_text = "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                supply_demand_text += "📊 수급 분석 (최근 10일)\n"
+                supply_demand_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 
-                # 최근 외국인 보유 변화
-                if len(supply_demand_data) >= 2 and supply_demand_data[0].foreign_ownership and supply_demand_data[-1].foreign_ownership:
-                    foreign_change = supply_demand_data[0].foreign_ownership - supply_demand_data[-1].foreign_ownership
-                    supply_demand_text += f"\n  → 10일간 외국인보유 변화: {foreign_change:+.2f}%p\n"
+                # 1. 투자자별 순매수 추세
+                investor_data = []
+                for sd in supply_demand_data:
+                    if sd.individual_net_buy or sd.foreign_net_buy or sd.institution_net_buy:
+                        investor_data.append({
+                            'date': sd.date,
+                            'individual': sd.individual_net_buy or 0,
+                            'foreign': sd.foreign_net_buy or 0,
+                            'institution': sd.institution_net_buy or 0,
+                        })
+                
+                if investor_data:
+                    supply_demand_text += "1️⃣ 투자자별 순매수 (최근 5일):\n"
+                    for data in investor_data[:5]:
+                        date_str = data['date'].strftime('%m/%d')
+                        supply_demand_text += f"  {date_str}: "
+                        supply_demand_text += f"개인 {data['individual']:+,.0f} | "
+                        supply_demand_text += f"외국인 {data['foreign']:+,.0f} | "
+                        supply_demand_text += f"기관 {data['institution']:+,.0f}\n"
+                    
+                    # 5일 누적
+                    if len(investor_data) >= 5:
+                        ind_5d = sum([d['individual'] for d in investor_data[:5]])
+                        for_5d = sum([d['foreign'] for d in investor_data[:5]])
+                        ins_5d = sum([d['institution'] for d in investor_data[:5]])
+                        
+                        supply_demand_text += f"\n  → 5일 누적: "
+                        supply_demand_text += f"개인 {ind_5d:+,.0f} | "
+                        supply_demand_text += f"외국인 {for_5d:+,.0f} | "
+                        supply_demand_text += f"기관 {ins_5d:+,.0f}\n"
+                        
+                        # 추세 판단
+                        if for_5d > 0 and ins_5d > 0:
+                            supply_demand_text += f"  💪 외국인+기관 순매수 (긍정적 신호)\n"
+                        elif for_5d < 0 and ins_5d < 0:
+                            supply_demand_text += f"  ⚠️ 외국인+기관 순매도 (부정적 신호)\n"
+                    
+                    supply_demand_text += "\n"
+                
+                # 2. 공매도 분석
+                short_data = []
+                for sd in supply_demand_data:
+                    if sd.short_volume or sd.short_ratio:
+                        short_data.append({
+                            'date': sd.date,
+                            'volume': sd.short_volume or 0,
+                            'ratio': sd.short_ratio or 0,
+                        })
+                
+                if short_data:
+                    supply_demand_text += "2️⃣ 공매도 추이 (최근 5일):\n"
+                    for data in short_data[:5]:
+                        date_str = data['date'].strftime('%m/%d')
+                        supply_demand_text += f"  {date_str}: {data['volume']:,.0f}주 ({data['ratio']:.2f}%)\n"
+                    
+                    # 추세 분석
+                    if len(short_data) >= 2:
+                        recent_avg = sum([d['ratio'] for d in short_data[:3]]) / 3 if len(short_data) >= 3 else short_data[0]['ratio']
+                        older_avg = sum([d['ratio'] for d in short_data[-3:]]) / 3 if len(short_data) >= 6 else short_data[-1]['ratio']
+                        
+                        if recent_avg > older_avg * 1.5:
+                            supply_demand_text += f"  ⚠️ 공매도 급증 (부정적 신호)\n"
+                        elif recent_avg < older_avg * 0.7:
+                            supply_demand_text += f"  💪 공매도 감소 (긍정적 신호)\n"
+                    
+                    supply_demand_text += "\n"
+                
+                # 3. 신용잔고 분석
+                credit_data = []
+                for sd in supply_demand_data:
+                    if sd.margin_balance or sd.credit_sell_balance:
+                        credit_data.append({
+                            'date': sd.date,
+                            'margin': sd.margin_balance or 0,
+                            'credit_sell': sd.credit_sell_balance or 0,
+                        })
+                
+                if credit_data:
+                    supply_demand_text += "3️⃣ 신용잔고 추이 (최근 5일):\n"
+                    for data in credit_data[:5]:
+                        date_str = data['date'].strftime('%m/%d')
+                        supply_demand_text += f"  {date_str}: 융자 {data['margin']:,.0f}주 | 대주 {data['credit_sell']:,.0f}주\n"
+                    
+                    # 과열 판단
+                    if len(credit_data) >= 2:
+                        margin_change = ((credit_data[0]['margin'] - credit_data[-1]['margin']) / credit_data[-1]['margin'] * 100) if credit_data[-1]['margin'] > 0 else 0
+                        
+                        if margin_change > 20:
+                            supply_demand_text += f"  ⚠️ 융자 급증 +{margin_change:.1f}% (과열 가능성)\n"
+                        elif margin_change < -20:
+                            supply_demand_text += f"  💪 융자 감소 {margin_change:.1f}% (건전)\n"
+                    
+                    supply_demand_text += "\n"
+                
+                # 4. 외국인 보유율
+                foreign_ownership_data = []
+                for sd in supply_demand_data:
+                    if sd.foreign_ownership:
+                        foreign_ownership_data.append({
+                            'date': sd.date,
+                            'ownership': sd.foreign_ownership,
+                        })
+                
+                if foreign_ownership_data:
+                    supply_demand_text += "4️⃣ 외국인 보유율:\n"
+                    latest = foreign_ownership_data[0]
+                    supply_demand_text += f"  현재: {latest['ownership']:.2f}%\n"
+                    
+                    if len(foreign_ownership_data) >= 2:
+                        change_10d = latest['ownership'] - foreign_ownership_data[-1]['ownership']
+                        supply_demand_text += f"  10일 변화: {change_10d:+.2f}%p\n"
 
             # 지표 요약
             indicators_text = ""
