@@ -306,6 +306,48 @@ class MacroIndicator(Base):
 
 
 # ═══════════════════════════════════════════
+# Supply & Demand Data (수급 데이터)
+# ═══════════════════════════════════════════
+class SupplyDemandData(Base):
+    """수급 지표 (공매도, 신용잔고, 투자자별 매매)"""
+    __tablename__ = "supply_demand_data"
+    __table_args__ = (
+        UniqueConstraint("stock_id", "date", name="uq_supply_demand_date"),
+        Index("ix_supply_demand_stock_date", "stock_id", "date"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    
+    # 공매도 (Short Selling)
+    short_volume = Column(Float)          # 공매도 거래량
+    short_amount = Column(Float)          # 공매도 거래대금
+    short_balance = Column(Float)         # 공매도 잔량
+    short_ratio = Column(Float)           # 공매도 비중 (%)
+    
+    # 신용거래 (Margin Trading)
+    credit_buy_balance = Column(Float)    # 신용매수 잔고
+    credit_sell_balance = Column(Float)   # 신용매도 잔고
+    margin_balance = Column(Float)        # 융자 잔고
+    margin_ratio = Column(Float)          # 신용잔고율 (%)
+    
+    # 투자자별 매매 (Investor Trading)
+    foreign_net_buy = Column(Float)       # 외국인 순매수
+    institution_net_buy = Column(Float)   # 기관 순매수
+    individual_net_buy = Column(Float)    # 개인 순매수
+    foreign_ownership = Column(Float)     # 외국인 보유비중 (%)
+    
+    # 거래량/대금
+    volume = Column(Float)                # 거래량
+    trading_value = Column(Float)         # 거래대금
+    
+    collected_at = Column(DateTime, default=datetime.utcnow)
+    
+    stock = relationship("Stock")
+
+
+# ═══════════════════════════════════════════
 # Pipeline Tracking
 # ═══════════════════════════════════════════
 class PipelineRun(Base):
