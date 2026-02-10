@@ -383,6 +383,44 @@ class DisclosureData(Base):
 
 
 # ═══════════════════════════════════════════
+# Research Reports (증권사 리포트)
+# ═══════════════════════════════════════════
+class ResearchReport(Base):
+    """증권사 리포트"""
+    __tablename__ = "research_reports"
+    __table_args__ = (
+        UniqueConstraint("stock_id", "firm", "report_date", "title", name="uq_report"),
+        Index("ix_report_stock_date", "stock_id", "report_date"),
+        Index("ix_report_firm", "firm"),
+    )
+    
+    id = Column(Integer, primary_key=True)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False, index=True)
+    
+    # 리포트 정보
+    firm = Column(String(100), nullable=False)      # 증권사
+    analyst = Column(String(100))                   # 애널리스트
+    report_date = Column(Date, nullable=False, index=True)  # 발행일
+    
+    # 투자 의견
+    opinion = Column(String(20))                    # 매수/중립/매도/BUY/HOLD/SELL
+    target_price = Column(Float)                    # 목표주가
+    current_price = Column(Float)                   # 발행 시점 현재가
+    
+    # 내용
+    title = Column(String(500), nullable=False)
+    summary = Column(Text)                          # 요약
+    pdf_url = Column(String(500))                   # PDF 링크
+    source_url = Column(String(500))                # 원문 링크
+    
+    # 메타데이터
+    is_processed = Column(Boolean, default=False)   # AI 분석 여부
+    collected_at = Column(DateTime, default=datetime.utcnow)
+    
+    stock = relationship("Stock")
+
+
+# ═══════════════════════════════════════════
 # Pipeline Tracking
 # ═══════════════════════════════════════════
 class PipelineRun(Base):

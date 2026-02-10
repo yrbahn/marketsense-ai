@@ -450,6 +450,28 @@ class FundamentalsAgent(BaseAgent):
     낙관적: {fair_20:,.0f}원
 """
             
+            # 증권사 리포트 (최근 5개)
+            from src.storage.models import ResearchReport
+            
+            reports = (
+                session.query(ResearchReport)
+                .filter(ResearchReport.stock_id == stock.id)
+                .order_by(ResearchReport.report_date.desc())
+                .limit(5)
+                .all()
+            )
+            
+            report_text = ""
+            if reports:
+                report_text = "\n\n증권사 리포트 (최근 5개):\n"
+                for r in reports:
+                    report_text += f"\n  [{r.report_date}] {r.firm}:\n"
+                    report_text += f"    - {r.title}\n"
+                    if r.opinion:
+                        report_text += f"    - 투자의견: {r.opinion}\n"
+                    if r.target_price:
+                        report_text += f"    - 목표주가: {r.target_price:,.0f}원\n"
+            
             # Gemini로 분석
             prompt = f"""{self.SYSTEM_PROMPT}
 
@@ -457,7 +479,7 @@ class FundamentalsAgent(BaseAgent):
 업종: {stock.industry or 'N/A'}
 
 재무제표 (최근 8개 분기 = 2년):
-{''.join(financials_text)}{peer_text}{valuation_text}
+{''.join(financials_text)}{peer_text}{valuation_text}{report_text}
 
 분석 시 중점 사항:
 1. YoY (전년 동기 대비) 성장률 계산 및 추세 파악
