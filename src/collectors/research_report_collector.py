@@ -60,6 +60,15 @@ class ResearchReportCollector(BaseCollector):
                         logger.debug(f"[ResearchReport] {stock.ticker} 실패: {e}")
                         continue
 
+                # 실시간 벡터화
+                if total > 0:
+                    try:
+                        logger.info(f"[ResearchReport] 즉시 벡터화 시작: {total}건")
+                        self._vectorize_collected_reports(session, run.started_at)
+                        logger.info(f"[ResearchReport] 벡터화 완료")
+                    except Exception as ve:
+                        logger.error(f"[ResearchReport] 벡터화 실패: {ve}")
+
                 self._finish_run(run, total)
 
             except Exception as e:
@@ -202,3 +211,39 @@ class ResearchReportCollector(BaseCollector):
             logger.debug(f"[ResearchReport] {stock.ticker} 수집 실패: {e}")
 
         return count
+
+    def _vectorize_collected_reports(self, session, started_at):
+        """수집된 리포트 즉시 벡터화"""
+        from src.rag.vector_store import VectorStore
+        
+        # 이번 수집 이후 리포트만 가져오기
+        new_reports = session.query(ResearchReport).filter(
+            ResearchReport.collected_at >= started_at
+        ).all()
+        
+        if not new_reports:
+            return
+        
+        # 배치 단위로 벡터화
+        vs = VectorStore()
+        batch_size = 1000
+        
+        for i in range(0, len(new_reports), batch_size):
+            batch = new_reports[i:i + batch_size]
+            report_data = []
+            
+            for report in batch:
+                stock = session.query(Stock).filter_by(id=report.stock_id).first()
+                ticker = stock.ticker if stock else ''
+                
+                report_data.append({
+                    'id': str(report.id),
+                    'stock_id': report.stock_id,
+                    'ticker': ticker,
+                    'title': report.title or '',
+                    'firm': report.firm or '',
+                    'report_date': report.report_date
+                })
+            
+            vs.add_reports(report_data)
+            logger.info(f"  → 리포트 벡터화: {i + len(batch)}/{len(new_reports)}")

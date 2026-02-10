@@ -69,6 +69,16 @@ class NewsCollector(BaseCollector):
                         elif source_name == "rss_feeds":
                             total += self._collect_rss(session, source_cfg.get("feeds", []))
 
+                # 실시간 벡터화
+                if total > 0:
+                    try:
+                        logger.info(f"[NewsCollector] 즉시 벡터화 시작: {total}건")
+                        self._vectorize_collected_news(session, run.started_at)
+                        logger.info(f"[NewsCollector] 벡터화 완료")
+                    except Exception as ve:
+                        logger.error(f"[NewsCollector] 벡터화 실패: {ve}")
+                        # 벡터화 실패해도 수집은 성공으로 처리
+
                 self._finish_run(run, total)
             except Exception as e:
                 self._finish_run(run, total, str(e))
@@ -560,3 +570,37 @@ class NewsCollector(BaseCollector):
         text = text.replace("&lt;", "<")
         text = text.replace("&gt;", ">")
         return text
+
+    def _vectorize_collected_news(self, session, started_at):
+        """수집된 뉴스 즉시 벡터화"""
+        from src.rag.vector_store import VectorStore
+        
+        # 이번 수집 이후 뉴스만 가져오기
+        new_news = session.query(NewsArticle).filter(
+            NewsArticle.collected_at >= started_at
+        ).all()
+        
+        if not new_news:
+            return
+        
+        # 배치 단위로 벡터화
+        vs = VectorStore()
+        batch_size = 1000
+        
+        for i in range(0, len(new_news), batch_size):
+            batch = new_news[i:i + batch_size]
+            news_data = []
+            
+            for news in batch:
+                news_data.append({
+                    'id': str(news.id),
+                    'ticker': news.ticker or '',
+                    'title': news.title or '',
+                    'content': news.summary or '',
+                    'published_at': news.published_at,
+                    'source': news.source or '',
+                    'url': news.url or ''
+                })
+            
+            vs.add_news(news_data)
+            logger.info(f"  → 뉴스 벡터화: {i + len(batch)}/{len(new_news)}")

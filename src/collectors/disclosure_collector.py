@@ -124,6 +124,15 @@ class DisclosureCollector(BaseCollector):
                     
                     session.flush()
                 
+                # 실시간 벡터화
+                if total > 0:
+                    try:
+                        logger.info(f"[Disclosure] 즉시 벡터화 시작: {total}건")
+                        self._vectorize_collected_disclosures(session, run.started_at)
+                        logger.info(f"[Disclosure] 벡터화 완료")
+                    except Exception as ve:
+                        logger.error(f"[Disclosure] 벡터화 실패: {ve}")
+                
                 self._finish_run(run, total)
                 logger.info(f"[Disclosure] 완료: {total}건 수집")
                 
@@ -225,3 +234,39 @@ class DisclosureCollector(BaseCollector):
         stock = session.query(Stock).filter_by(ticker=ticker).first()
         
         return stock
+
+    def _vectorize_collected_disclosures(self, session, started_at):
+        """수집된 공시 즉시 벡터화"""
+        from src.rag.vector_store import VectorStore
+        
+        # 이번 수집 이후 공시만 가져오기
+        new_disclosures = session.query(DisclosureData).filter(
+            DisclosureData.collected_at >= started_at
+        ).all()
+        
+        if not new_disclosures:
+            return
+        
+        # 배치 단위로 벡터화
+        vs = VectorStore()
+        batch_size = 1000
+        
+        for i in range(0, len(new_disclosures), batch_size):
+            batch = new_disclosures[i:i + batch_size]
+            disc_data = []
+            
+            for disc in batch:
+                stock = session.query(Stock).filter_by(id=disc.stock_id).first()
+                ticker = stock.ticker if stock else ''
+                
+                disc_data.append({
+                    'id': str(disc.id),
+                    'stock_id': disc.stock_id,
+                    'ticker': ticker,
+                    'report_nm': disc.report_nm or '',
+                    'disclosure_type': disc.disclosure_type or '',
+                    'rcept_dt': disc.rcept_dt
+                })
+            
+            vs.add_disclosures(disc_data)
+            logger.info(f"  → 공시 벡터화: {i + len(batch)}/{len(new_disclosures)}")
