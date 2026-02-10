@@ -267,6 +267,102 @@ class KISApi:
             return None
 
 
+    def get_credit_balance(self, ticker: str, date: str) -> Optional[List[Dict]]:
+        """신용잔고 일별 추이
+        
+        Args:
+            ticker: 종목코드 (6자리)
+            date: YYYYMMDD
+        
+        Returns:
+            List of dicts with credit balance info
+            융자: whol_loan_* (신용매수)
+            대주: whol_stln_* (신용매도)
+        """
+        # KIS API: 국내주식 신용잔고 일별추이
+        # TR ID: FHPST04760000
+        
+        url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/daily-credit-balance"
+        
+        headers = self._get_headers("FHPST04760000")
+        headers['custtype'] = 'P'  # 개인
+        
+        params = {
+            "fid_cond_mrkt_div_code": "J",
+            "fid_cond_scr_div_code": "20476",
+            "fid_input_iscd": ticker,
+            "fid_input_date_1": date,
+        }
+        
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=10)
+            
+            if resp.status_code == 200:
+                result = resp.json()
+                
+                if result.get("rt_cd") == "0":
+                    return result.get("output", [])
+                else:
+                    logger.warning(f"[KIS] API 응답 오류: {result.get('msg1')}")
+                    return None
+            else:
+                logger.error(f"[KIS] API 호출 실패: {resp.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"[KIS] 신용잔고 조회 오류: {e}")
+            return None
+    
+    def get_short_selling(self, ticker: str, start_date: str, end_date: str = None) -> Optional[List[Dict]]:
+        """공매도 일별 추이
+        
+        Args:
+            ticker: 종목코드 (6자리)
+            start_date: YYYYMMDD
+            end_date: YYYYMMDD (기본값: start_date)
+        
+        Returns:
+            List of dicts with short selling info
+            필드: ssts_cntg_qty (공매도 수량), ssts_vol_rlim (공매도 비중)
+        """
+        if not end_date:
+            end_date = start_date
+        
+        # KIS API: 국내주식 공매도 일별추이
+        # TR ID: FHPST04830000
+        
+        url = f"{self.base_url}/uapi/domestic-stock/v1/quotations/daily-short-sale"
+        
+        headers = self._get_headers("FHPST04830000")
+        headers['custtype'] = 'P'  # 개인
+        
+        params = {
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_INPUT_ISCD": ticker,
+            "FID_INPUT_DATE_1": start_date,
+            "FID_INPUT_DATE_2": end_date,
+        }
+        
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=10)
+            
+            if resp.status_code == 200:
+                result = resp.json()
+                
+                if result.get("rt_cd") == "0":
+                    return result.get("output2", [])
+                else:
+                    logger.warning(f"[KIS] API 응답 오류: {result.get('msg1')}")
+                    return None
+            else:
+                logger.error(f"[KIS] API 호출 실패: {resp.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"[KIS] 공매도 조회 오류: {e}")
+            return None
+
+
 # 편의 함수
 def get_kis_investor_trading(ticker: str, date: str) -> Optional[List[Dict]]:
     """투자자별 매매동향 조회 (편의 함수)"""
