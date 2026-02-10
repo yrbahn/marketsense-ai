@@ -12,6 +12,10 @@ from datetime import datetime, timedelta
 from typing import List, Tuple, Optional, Dict, Any
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
+from dotenv import load_dotenv
+
+# .env 파일 로드 (최우선)
+load_dotenv()
 
 from src.storage.database import init_db
 from src.storage.models import Stock, PriceData
