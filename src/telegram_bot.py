@@ -280,7 +280,7 @@ class TelegramBot:
 
 ━━━━━━━━━━━━━━━━━━━━━━
 분석을 시작합니다..."""
-            self.notifier.send_message(header_msg)
+            self.notifier.send(header_msg)
             
             # 2. 뉴스 분석
             if news_result and not news_result.get('error'):
@@ -288,9 +288,9 @@ class TelegramBot:
                 news_msg = f"""📰 **뉴스 애널리스트 분석**
 
 {news_summary}"""
-                self.notifier.send_message(news_msg)
+                self.notifier.send(news_msg)
             else:
-                self.notifier.send_message("📰 **뉴스 애널리스트 분석**\n\n데이터 없음")
+                self.notifier.send("📰 **뉴스 애널리스트 분석**\n\n데이터 없음")
             
             # 3. 재무 분석
             if fund_result and not fund_result.get('error'):
@@ -309,9 +309,9 @@ class TelegramBot:
 **밸류에이션**: {valuation_info}
 
 {fund_summary}"""
-                self.notifier.send_message(fund_msg)
+                self.notifier.send(fund_msg)
             else:
-                self.notifier.send_message("💰 **펀더멘털 애널리스트 분석**\n\n데이터 없음")
+                self.notifier.send("💰 **펀더멘털 애널리스트 분석**\n\n데이터 없음")
             
             # 4. 기술적 분석
             if dyn_result and not dyn_result.get('error'):
@@ -323,9 +323,9 @@ class TelegramBot:
 **추세**: {trend_kr.get(dyn_result.get('trend'), 'N/A')}
 
 {dyn_summary}"""
-                self.notifier.send_message(dyn_msg)
+                self.notifier.send(dyn_msg)
             else:
-                self.notifier.send_message("📈 **기술적/수급 애널리스트 분석**\n\n데이터 없음")
+                self.notifier.send("📈 **기술적/수급 애널리스트 분석**\n\n데이터 없음")
             
             # 5. 거시경제 분석
             macro_result = results.get('macro')
@@ -337,9 +337,9 @@ class TelegramBot:
 **거시경제 점수**: {macro_result.get('macro_score', 0)}
 
 {macro_summary}"""
-                self.notifier.send_message(macro_msg)
+                self.notifier.send(macro_msg)
             else:
-                self.notifier.send_message("🌍 **거시경제 애널리스트 분석**\n\n데이터 없음")
+                self.notifier.send("🌍 **거시경제 애널리스트 분석**\n\n데이터 없음")
             
             # 6. 최종 투자 신호 (CIO)
             signal_summary = signal_result.get('summary', 'N/A')
@@ -355,7 +355,7 @@ class TelegramBot:
 ⏰ {signal_result.get('analyzed_at', '')}
 
 _※ AI 분석은 참고용이며, 실제 투자는 본인 판단으로 하세요._"""
-            self.notifier.send_message(signal_msg)
+            self.notifier.send(signal_msg)
             
             # 완료 메시지 반환 (이미 개별 메시지들을 전송했으므로)
             return f"✅ {name} ({ticker}) 분석 완료! (6개 메시지 전송)"
