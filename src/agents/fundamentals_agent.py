@@ -267,6 +267,11 @@ class FundamentalsAgent(BaseAgent):
                     if comp.get('debt_vs_sector'):
                         peer_text += f"부채비율 비교: {comp.get('target_debt_ratio', 0):.1f}% vs 업종평균 {comp.get('sector_avg_debt_ratio', 0):.1f}% → {comp['debt_vs_sector']}\n"
             
+            # 업종 평균 PER 가져오기 (네이버 기반)
+            sector_avg_per = None
+            if peer_comparison and peer_comparison.get('peer_metrics'):
+                sector_avg_per = peer_comparison['peer_metrics'].get('avg_pe')
+            
             # 밸류에이션 계산 (TTM 또는 네이버)
             valuation_text = ""
             
@@ -299,6 +304,18 @@ class FundamentalsAgent(BaseAgent):
   성장주 프리미엄 (PER 15-20배):
     보수적: {valuation['growth_value_range']['conservative']:,.0f}원
     낙관적: {valuation['growth_value_range']['optimistic']:,.0f}원
+"""
+                    # 업종 평균 PER 비교 추가
+                    if sector_avg_per and sector_avg_per > 0:
+                        per_vs_sector = ((valuation['per'] - sector_avg_per) / sector_avg_per * 100)
+                        valuation_status = "저평가" if per_vs_sector < -10 else "고평가" if per_vs_sector > 10 else "적정"
+                        
+                        valuation_text += f"""
+  업종 평균 PER 비교:
+    업종 평균: {sector_avg_per:.2f}배
+    대상 종목: {valuation['per']:.2f}배
+    차이: {per_vs_sector:+.1f}%
+    평가: {valuation_status}
 """
                 else:
                     # TTM 실패 → 네이버 PER 시도
@@ -341,6 +358,18 @@ class FundamentalsAgent(BaseAgent):
     적정: {fair_15:,.0f}원
     낙관적: {fair_20:,.0f}원
 """
+                        # 업종 평균 PER 비교 추가
+                        if sector_avg_per and sector_avg_per > 0:
+                            per_vs_sector = ((naver_data['per'] - sector_avg_per) / sector_avg_per * 100)
+                            valuation_status = "저평가" if per_vs_sector < -10 else "고평가" if per_vs_sector > 10 else "적정"
+                            
+                            valuation_text += f"""
+  업종 평균 PER 비교:
+    업종 평균: {sector_avg_per:.2f}배
+    대상 종목: {naver_data['per']:.2f}배
+    차이: {per_vs_sector:+.1f}%
+    평가: {valuation_status}
+"""
             
             # Gemini로 분석
             prompt = f"""{self.SYSTEM_PROMPT}
@@ -358,7 +387,14 @@ class FundamentalsAgent(BaseAgent):
 4. 계절성 패턴 존재 여부
 5. 수익성/안정성 지표의 시계열 추이
 6. **밸류에이션 분석** - 제공된 PER, 적정가 범위를 반드시 참조하여 판단
-7. 목표가는 제공된 적정가 범위 내에서 성장성/수익성을 고려하여 설정
+   - **업종 평균 PER 대비 상대적 평가 중요!**
+   - 업종 대비 -10% 이하: 저평가
+   - 업종 대비 -10% ~ +10%: 적정
+   - 업종 대비 +10% 이상: 고평가
+7. 목표가는 제공된 적정가 범위 내에서 성장성/수익성/업종 평균을 모두 고려하여 설정
+   - 성장성이 높고 업종 평균보다 낮으면 → 적정가의 상한 선택
+   - 성장성이 보통이고 업종 평균 수준이면 → 적정가의 중간값 선택
+   - 성장성이 낮거나 업종 평균보다 높으면 → 적정가의 하한 선택
 
 위 재무 데이터, 동종업계 비교, 밸류에이션을 종합 분석하여 JSON 형식으로 답변하세요.
 """

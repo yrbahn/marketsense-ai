@@ -73,6 +73,28 @@ def calculate_peer_metrics(session, peers: List[Stock]) -> Dict:
     debt_ratios = []
     roes = []
     
+    # 네이버 PER 평균 (우선 사용)
+    naver_pers = []
+    naver_pbrs = []
+    
+    for peer in peers:
+        # 네이버 밸류에이션 데이터 확인
+        if peer.raw_data and peer.raw_data.get('naver_valuation'):
+            naver_val = peer.raw_data['naver_valuation']
+            if naver_val.get('per') and naver_val['per'] > 0:
+                naver_pers.append(naver_val['per'])
+            if naver_val.get('pbr') and naver_val['pbr'] > 0:
+                naver_pbrs.append(naver_val['pbr'])
+    
+    # 네이버 PER 평균 계산
+    if naver_pers:
+        metrics['avg_pe'] = sum(naver_pers) / len(naver_pers)
+        metrics['naver_pe_count'] = len(naver_pers)
+    
+    if naver_pbrs:
+        metrics['avg_pb'] = sum(naver_pbrs) / len(naver_pbrs)
+        metrics['naver_pbr_count'] = len(naver_pbrs)
+    
     for peer in peers:
         # 최근 재무제표
         stmt = session.query(FinancialStatement).filter(
