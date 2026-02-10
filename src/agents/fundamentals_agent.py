@@ -89,6 +89,26 @@ class FundamentalsAgent(BaseAgent):
                             value = stmt.raw_data[key]
                             financials_text.append(f"  - {key}: {value:,.0f}원")
 
+            # 동종업계 비교 (Peer Analysis)
+            from src.utils.peer_analysis import compare_with_peers
+            
+            peer_comparison = compare_with_peers(session, ticker)
+            peer_text = ""
+            
+            if peer_comparison and peer_comparison.get('sector') != '미분류':
+                peer_text = f"\n\n동종업계 비교 ({peer_comparison['sector']}):\n"
+                
+                if peer_comparison.get('peers'):
+                    peer_names = [p['name'] for p in peer_comparison['peers'][:5]]
+                    peer_text += f"주요 경쟁사: {', '.join(peer_names)}\n"
+                
+                if peer_comparison.get('comparison'):
+                    comp = peer_comparison['comparison']
+                    if comp.get('pe_vs_sector'):
+                        peer_text += f"P/E 비교: {comp.get('target_pe', 0):.1f} vs 업종평균 {comp.get('sector_avg_pe', 0):.1f} → {comp['pe_vs_sector']}\n"
+                    if comp.get('debt_vs_sector'):
+                        peer_text += f"부채비율 비교: {comp.get('target_debt_ratio', 0):.1f}% vs 업종평균 {comp.get('sector_avg_debt_ratio', 0):.1f}% → {comp['debt_vs_sector']}\n"
+            
             # Gemini로 분석
             prompt = f"""{self.SYSTEM_PROMPT}
 
@@ -96,9 +116,9 @@ class FundamentalsAgent(BaseAgent):
 업종: {stock.industry or 'N/A'}
 
 재무제표 (최근 4분기):
-{''.join(financials_text)}
+{''.join(financials_text)}{peer_text}
 
-위 재무 데이터를 종합 분석하여 JSON 형식으로 답변하세요.
+위 재무 데이터와 동종업계 비교를 종합 분석하여 JSON 형식으로 답변하세요.
 """
 
             try:
