@@ -118,7 +118,7 @@ class TelegramBot:
 """
     
     def cmd_analyze(self, args: str) -> str:
-        """종목 분석"""
+        """종목 분석 (4개 에이전트 전체)"""
         if not args:
             return "❌ 종목을 입력하세요.\n예: `/분석 삼성전자`"
         
@@ -127,15 +127,101 @@ class TelegramBot:
         if not stock:
             return f"❌ 종목을 찾을 수 없습니다: {args}\n`/종목검색 {args}` 로 검색해보세요."
         
-        return f"""
-🔄 **AI 분석 시작**
+        ticker = stock['ticker']
+        name = stock['name']
+        
+        # 4개 에이전트 분석 실행
+        from src.agents import NewsAgent, FundamentalsAgent, DynamicsAgent, MacroAgent, SignalAgent
+        
+        results = {}
+        
+        try:
+            # 1. 뉴스 분석
+            logger.info(f"[NewsAgent] {ticker} 분석 시작")
+            agent = NewsAgent(self.config, self.db)
+            results['news'] = agent.analyze(ticker)
+            
+            # 2. 재무 분석
+            logger.info(f"[FundamentalsAgent] {ticker} 분석 시작")
+            agent = FundamentalsAgent(self.config, self.db)
+            results['fundamentals'] = agent.analyze(ticker)
+            
+            # 3. 기술적 분석
+            logger.info(f"[DynamicsAgent] {ticker} 분석 시작")
+            agent = DynamicsAgent(self.config, self.db)
+            results['dynamics'] = agent.analyze(ticker)
+            
+            # 4. 거시경제 분석
+            logger.info(f"[MacroAgent] 분석 시작")
+            agent = MacroAgent(self.config, self.db)
+            results['macro'] = agent.analyze()
+            
+            # 5. 최종 통합
+            logger.info(f"[SignalAgent] {ticker} 통합 시작")
+            agent = SignalAgent(self.config, self.db)
+            results['signal'] = agent.aggregate(
+                ticker,
+                news_result=results.get('news'),
+                fundamentals_result=results.get('fundamentals'),
+                dynamics_result=results.get('dynamics'),
+                macro_result=results.get('macro')
+            )
+            
+            # 결과 포맷팅
+            signal_kr = {'BUY': '매수', 'SELL': '매도', 'HOLD': '보유'}
+            risk_kr = {'low': '낮음', 'medium': '보통', 'high': '높음'}
+            
+            signal_result = results['signal']
+            news_result = results.get('news', {})
+            fund_result = results.get('fundamentals', {})
+            dyn_result = results.get('dynamics', {})
+            
+            response = f"""🤖 **AI 종합 분석**
 
-종목: {stock['name']} ({stock['ticker']})
+**종목**: {name} ({ticker})
 
-분석 중... (약 30초 소요)
-완료되면 결과를 보내드립니다.
+━━━━━━━━━━━━━━━━━━━━━━
 
-_(현재 AI 분석 모듈 버그로 인해 샘플 결과 표시)_
+📰 **뉴스 분석**
+• 감성: {news_result.get('sentiment', 'N/A')}
+• 요약: {news_result.get('summary', '데이터 없음')[:100]}...
+
+💰 **재무 분석**
+• 밸류에이션: {fund_result.get('valuation', 'N/A')}
+• 요약: {fund_result.get('summary', '데이터 없음')[:100]}...
+
+📈 **기술적 분석**
+• 추세: {dyn_result.get('trend', 'N/A')}
+• 요약: {dyn_result.get('summary', '데이터 없음')[:100]}...
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 **최종 투자 신호**
+• **신호**: {signal_kr.get(signal_result.get('signal'), signal_result.get('signal'))}
+• **신뢰도**: {signal_result.get('confidence', 0)*100:.0f}%
+• **리스크**: {risk_kr.get(signal_result.get('risk_level'), 'N/A')}
+
+**종합 의견**:
+{signal_result.get('summary', 'N/A')}
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+⏰ {signal_result.get('analyzed_at', '')}
+
+_※ AI 분석은 참고용이며, 실제 투자는 본인 판단으로 하세요._
+"""
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"분석 오류: {e}")
+            return f"""
+❌ **분석 중 오류 발생**
+
+종목: {name} ({ticker})
+오류: {str(e)}
+
+잠시 후 다시 시도하거나 `/시세 {name}` 명령어를 사용하세요.
 """
     
     def cmd_price(self, args: str) -> str:
