@@ -152,14 +152,25 @@ class FundamentalsAgent(BaseAgent):
             if not stock:
                 return {"error": f"종목 {ticker}를 찾을 수 없습니다"}
 
-            # 최근 재무제표
+            # 최근 재무제표 (OpenDartReader 우선)
             statements = (
                 session.query(FinancialStatement)
                 .filter(FinancialStatement.stock_id == stock.id)
+                .filter(FinancialStatement.source == 'opendartreader')
                 .order_by(FinancialStatement.period_end.desc())
                 .limit(4)
                 .all()
             )
+            
+            # OpenDartReader 데이터 없으면 다른 소스 사용
+            if not statements:
+                statements = (
+                    session.query(FinancialStatement)
+                    .filter(FinancialStatement.stock_id == stock.id)
+                    .order_by(FinancialStatement.period_end.desc())
+                    .limit(4)
+                    .all()
+                )
 
             if not statements:
                 return {
@@ -172,10 +183,47 @@ class FundamentalsAgent(BaseAgent):
             financials_text = []
             for stmt in statements:
                 period = stmt.period_end.strftime("%Y-%m-%d")
-                stmt_type = stmt.statement_type
-                financials_text.append(f"\n[{period}] {stmt_type}:")
+                quarter = stmt.fiscal_quarter or stmt.statement_type
+                financials_text.append(f"\n[{period}] {quarter}:")
 
-                if stmt.raw_data:
+                # OpenDartReader 데이터 처리
+                if stmt.source == 'opendartreader' and stmt.raw_data:
+                    data = stmt.raw_data
+                    
+                    # 손익계산서
+                    if data.get('revenue'):
+                        financials_text.append(f"  - 매출액: {data['revenue']:,.0f}원")
+                    if data.get('operating_income'):
+                        financials_text.append(f"  - 영업이익: {data['operating_income']:,.0f}원")
+                    if data.get('net_income'):
+                        financials_text.append(f"  - 당기순이익: {data['net_income']:,.0f}원")
+                    
+                    # 재무상태표
+                    if data.get('total_assets'):
+                        financials_text.append(f"  - 자산총계: {data['total_assets']:,.0f}원")
+                    if data.get('total_liabilities'):
+                        financials_text.append(f"  - 부채총계: {data['total_liabilities']:,.0f}원")
+                    if data.get('total_equity'):
+                        financials_text.append(f"  - 자본총계: {data['total_equity']:,.0f}원")
+                    
+                    # 현금흐름
+                    if data.get('operating_cash_flow'):
+                        financials_text.append(f"  - 영업활동현금흐름: {data['operating_cash_flow']:,.0f}원")
+                    
+                    # 계산 지표
+                    if data.get('roe'):
+                        financials_text.append(f"  - ROE: {data['roe']:.1f}%")
+                    if data.get('debt_ratio'):
+                        financials_text.append(f"  - 부채비율: {data['debt_ratio']:.1f}%")
+                    if data.get('current_ratio'):
+                        financials_text.append(f"  - 유동비율: {data['current_ratio']:.1f}%")
+                    if data.get('operating_margin'):
+                        financials_text.append(f"  - 영업이익률: {data['operating_margin']:.1f}%")
+                    if data.get('net_margin'):
+                        financials_text.append(f"  - 순이익률: {data['net_margin']:.1f}%")
+                        
+                # 기존 DART API 데이터 처리
+                elif stmt.raw_data:
                     # 주요 항목만 추출 (한국어 계정명)
                     key_items = [
                         "자산총계",
