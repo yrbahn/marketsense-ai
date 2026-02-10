@@ -349,6 +349,40 @@ class SupplyDemandData(Base):
 
 
 # ═══════════════════════════════════════════
+# Disclosure Data (공시 정보)
+# ═══════════════════════════════════════════
+class DisclosureData(Base):
+    """DART 공시 정보"""
+    __tablename__ = "disclosure_data"
+    __table_args__ = (
+        UniqueConstraint("rcept_no", name="uq_disclosure_rcept"),
+        Index("ix_disclosure_stock_date", "stock_id", "rcept_dt"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False, index=True)
+    
+    # DART 기본 정보
+    rcept_no = Column(String(50), nullable=False, unique=True)  # 접수번호
+    rcept_dt = Column(Date, nullable=False, index=True)         # 접수일자
+    corp_code = Column(String(10))                              # 회사 코드
+    corp_name = Column(String(200))                             # 회사명
+    
+    # 공시 정보
+    report_nm = Column(String(500))                             # 보고서명
+    flr_nm = Column(String(200))                                # 공시제출인명
+    rm = Column(Text)                                           # 비고
+    
+    # 분류
+    disclosure_type = Column(String(100), index=True)           # 공시 유형 (실적, 증자, 자사주 등)
+    disclosure_category = Column(String(50))                    # 대분류 (major, regular 등)
+    
+    collected_at = Column(DateTime, default=datetime.utcnow)
+    
+    stock = relationship("Stock")
+
+
+# ═══════════════════════════════════════════
 # Pipeline Tracking
 # ═══════════════════════════════════════════
 class PipelineRun(Base):
