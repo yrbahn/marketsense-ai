@@ -452,17 +452,49 @@ class NewsCollector(BaseCollector):
         return count
     
     def _expand_query(self, stock: Stock) -> List[str]:
-        """쿼리 확장: 종목명 + 업종 키워드"""
-        queries = []
+        """쿼리 확장: LLM 기반 또는 폴백"""
+        # 1. 캐시 확인 (raw_data에 저장)
+        if hasattr(stock, 'raw_data') and stock.raw_data:
+            cached_keywords = stock.raw_data.get('search_keywords')
+            if cached_keywords and isinstance(cached_keywords, list):
+                logger.debug(f"[QueryExpander] {stock.name}: 캐시 사용")
+                return cached_keywords
         
-        # 1. 종목명
+        # 2. LLM으로 키워드 생성 시도
+        try:
+            from src.utils.query_expander import QueryExpander
+            
+            expander = QueryExpander()
+            stock_info = {
+                'name': stock.name,
+                'ticker': stock.ticker,
+                'sector': stock.sector,
+                'market_cap': stock.market_cap,
+                'industry': stock.industry
+            }
+            
+            keywords = expander.expand_query(stock_info)
+            
+            # 캐시 저장 시도 (다음에 재사용)
+            try:
+                if not hasattr(stock, 'raw_data') or stock.raw_data is None:
+                    stock.raw_data = {}
+                stock.raw_data['search_keywords'] = keywords
+            except Exception as e:
+                logger.debug(f"[QueryExpander] {stock.name} 캐시 저장 실패 (무시): {e}")
+            
+            return keywords
+            
+        except Exception as e:
+            logger.warning(f"[QueryExpander] {stock.name} LLM 실패, 폴백 사용: {e}")
+        
+        # 3. 폴백: 기존 하드코딩 방식
+        queries = []
         queries.append(stock.name)
         
-        # 2. 종목명 + 업종
         if stock.sector and stock.sector != '기타':
             queries.append(f"{stock.name} {stock.sector}")
         
-        # 3. 업종별 키워드 (관련 뉴스)
         sector_keywords = {
             '반도체': ['반도체', '칩', '웨이퍼', 'DRAM', 'NAND'],
             '화장품': ['화장품', 'K-뷰티', '마스크팩', '스킨케어'],
@@ -472,8 +504,7 @@ class NewsCollector(BaseCollector):
         }
         
         if stock.sector in sector_keywords:
-            # 업종 키워드만 (종목이 간접적으로 언급될 수 있음)
-            for keyword in sector_keywords[stock.sector][:2]:  # 상위 2개만
+            for keyword in sector_keywords[stock.sector][:2]:
                 queries.append(keyword)
         
         return queries
