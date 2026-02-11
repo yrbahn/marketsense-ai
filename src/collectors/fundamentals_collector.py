@@ -116,9 +116,8 @@ class FundamentalsCollector(BaseCollector):
         try:
             current_year = datetime.now().year
 
-            # 최근 2년 사업보고서 (연간) - 연결재무제표
-            # 사업보고서는 회계연도 종료 후 3-4개월 후 공시되므로 2년 전 데이터부터 조회
-            for year in [current_year - 2, current_year - 3]:
+            # 최근 3년 사업보고서 (연간) - 연결재무제표
+            for year in [2024, 2023, 2022]:
                 raw_data = self.dart.get_financial_statements(corp_code, year, "11011", "CFS")
                 if raw_data:
                     parsed = self.dart.parse_financial_statements(raw_data)
@@ -146,39 +145,81 @@ class FundamentalsCollector(BaseCollector):
 
                 time.sleep(0.5)
 
-            # 최근 분기보고서 (1분기, 3분기) - 전년도 데이터
-            quarter_year = current_year - 1
-            for report_code, quarter in [("11013", "Q1"), ("11014", "Q3")]:
-                raw_data = self.dart.get_financial_statements(
-                    corp_code, quarter_year, report_code, "CFS"
-                )
+            # 최근 3년 분기보고서 (1분기, 반기, 3분기)
+            for year in [2025, 2024, 2023]:
+                # Q1 (1분기 보고서)
+                raw_data = self.dart.get_financial_statements(corp_code, year, "11013", "CFS")
                 if raw_data:
                     parsed = self.dart.parse_financial_statements(raw_data)
-                    
                     if parsed:
-                        # 분기 종료일 추정
-                        q_month = 3 if quarter == "Q1" else 9
-                        period_end = date(quarter_year, q_month, 30)
-
+                        period_end = date(year, 3, 31)
                         exists = session.query(FinancialStatement).filter_by(
                             stock_id=stock_id,
                             period_type="quarterly",
                             period_end=period_end,
                             statement_type="consolidated",
                         ).first()
-                        
                         if not exists:
                             stmt = FinancialStatement(
                                 stock_id=stock_id,
                                 period_type="quarterly",
                                 period_end=period_end,
-                                fiscal_quarter=quarter,
+                                fiscal_quarter="Q1",
                                 statement_type="consolidated",
                                 raw_data=parsed,
                             )
                             session.add(stmt)
                             count += 1
-
+                time.sleep(0.5)
+                
+                # Q2 (반기 보고서)
+                raw_data = self.dart.get_financial_statements(corp_code, year, "11012", "CFS")
+                if raw_data:
+                    parsed = self.dart.parse_financial_statements(raw_data)
+                    if parsed:
+                        period_end = date(year, 6, 30)
+                        exists = session.query(FinancialStatement).filter_by(
+                            stock_id=stock_id,
+                            period_type="quarterly",
+                            period_end=period_end,
+                            statement_type="consolidated",
+                        ).first()
+                        if not exists:
+                            stmt = FinancialStatement(
+                                stock_id=stock_id,
+                                period_type="quarterly",
+                                period_end=period_end,
+                                fiscal_quarter="Q2",
+                                statement_type="consolidated",
+                                raw_data=parsed,
+                            )
+                            session.add(stmt)
+                            count += 1
+                time.sleep(0.5)
+                
+                # Q3 (3분기 보고서)
+                raw_data = self.dart.get_financial_statements(corp_code, year, "11014", "CFS")
+                if raw_data:
+                    parsed = self.dart.parse_financial_statements(raw_data)
+                    if parsed:
+                        period_end = date(year, 9, 30)
+                        exists = session.query(FinancialStatement).filter_by(
+                            stock_id=stock_id,
+                            period_type="quarterly",
+                            period_end=period_end,
+                            statement_type="consolidated",
+                        ).first()
+                        if not exists:
+                            stmt = FinancialStatement(
+                                stock_id=stock_id,
+                                period_type="quarterly",
+                                period_end=period_end,
+                                fiscal_quarter="Q3",
+                                statement_type="consolidated",
+                                raw_data=parsed,
+                            )
+                            session.add(stmt)
+                            count += 1
                 time.sleep(0.5)
 
         except Exception as e:
