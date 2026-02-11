@@ -115,22 +115,32 @@ class DartClient:
 
     def parse_financial_statements(self, raw_data: List[Dict]) -> Dict:
         """재무제표 데이터 파싱
-
+        
         Returns:
-            {계정명: 금액, ...}
+            {
+                "재무상태표": {계정명: 금액, ...},
+                "손익계산서": {계정명: 금액, ...},
+                "현금흐름표": {계정명: 금액, ...},
+                ...
+            }
         """
         result = {}
 
         for item in raw_data:
+            sj_nm = item.get("sj_nm")  # 재무제표명
             account_nm = item.get("account_nm")  # 계정명
             thstrm_amount = item.get("thstrm_amount")  # 당기금액
 
-            if account_nm and thstrm_amount:
+            if sj_nm and account_nm and thstrm_amount:
                 try:
                     # 금액 파싱 (쉼표 제거, 빈 문자열 처리)
                     if thstrm_amount.strip() and thstrm_amount.strip() != "-":
                         amount = float(thstrm_amount.replace(",", ""))
-                        result[account_nm] = amount
+                        
+                        # 재무제표별로 구분하여 저장
+                        if sj_nm not in result:
+                            result[sj_nm] = {}
+                        result[sj_nm][account_nm] = amount
                 except (ValueError, AttributeError):
                     continue
 
