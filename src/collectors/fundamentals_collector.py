@@ -14,7 +14,7 @@ from datetime import datetime, date
 from typing import Dict, List, Any, Optional
 
 from .base_collector import BaseCollector
-from .dart_opendart import OpenDartClient
+from .dart_client import DartClient
 from src.storage.database import Database
 from src.storage.models import Stock, FinancialStatement
 
@@ -29,11 +29,11 @@ class FundamentalsCollector(BaseCollector):
         self.fund_config = config.get("fundamentals", {})
         self.quarters = self.fund_config.get("financial_statements", {}).get("quarters", 5)
         
-        # DART API 클라이언트 (OpenDartReader)
+        # DART API 클라이언트
         try:
-            self.dart = OpenDartClient()
+            self.dart = DartClient()
             self.dart_enabled = True
-            logger.info("[Fundamentals] OpenDart API 활성화")
+            logger.info("[Fundamentals] DART API 활성화")
         except ValueError:
             self.dart = None
             self.dart_enabled = False
@@ -104,19 +104,21 @@ class FundamentalsCollector(BaseCollector):
                 raise
 
     def _collect_financials_dart(self, session, ticker: str, stock_id: int) -> int:
-        """OpenDartReader로 재무제표 수집"""
+        """DART API로 재무제표 수집 (2024년 4개 분기)"""
         count = 0
 
         # DART 고유번호 조회
         corp_code = self.corp_code_map.get(ticker)
         if not corp_code:
-            logger.debug(f"[OpenDart] {ticker} 고유번호 없음")
+            logger.debug(f"[DART] {ticker} 고유번호 없음")
             return 0
 
         try:
-            # 최근 3년 사업보고서 (연간)
-            for year in [2024, 2023, 2022]:
-                parsed = self.dart.get_financial_statements(corp_code, year, "11011")
+            # 2024년 사업보고서 (Q4 포함)
+            year = 2024
+            raw_data = self.dart.get_financial_statements(corp_code, year, "11011", "CFS")
+            if raw_data:
+                parsed = self.dart.parse_financial_statements(raw_data)
                 if parsed:
                     period_end = date(year, 12, 31)
                     exists = session.query(FinancialStatement).filter_by(
@@ -136,13 +138,17 @@ class FundamentalsCollector(BaseCollector):
                         )
                         session.add(stmt)
                         count += 1
-                
-                time.sleep(0.3)
+                        logger.info(f"[DART] {ticker} 2024년 사업보고서 수집")
+            
+            time.sleep(0.5)
 
-            # 최근 3년 분기보고서
-            for year in [2025, 2024, 2023]:
-                # Q1 (1분기)
-                parsed = self.dart.get_financial_statements(corp_code, year, "11013")
+            # 2024년 분기보고서 (Q1, Q2, Q3)
+            year = 2024
+            
+            # Q1 (1분기)
+            raw_data = self.dart.get_financial_statements(corp_code, year, "11013", "CFS")
+            if raw_data:
+                parsed = self.dart.parse_financial_statements(raw_data)
                 if parsed:
                     period_end = date(year, 3, 31)
                     exists = session.query(FinancialStatement).filter_by(
@@ -162,10 +168,13 @@ class FundamentalsCollector(BaseCollector):
                         )
                         session.add(stmt)
                         count += 1
-                time.sleep(0.3)
-                
-                # Q2 (반기)
-                parsed = self.dart.get_financial_statements(corp_code, year, "11012")
+                        logger.info(f"[DART] {ticker} 2024-Q1 수집")
+            time.sleep(0.5)
+            
+            # Q2 (반기)
+            raw_data = self.dart.get_financial_statements(corp_code, year, "11012", "CFS")
+            if raw_data:
+                parsed = self.dart.parse_financial_statements(raw_data)
                 if parsed:
                     period_end = date(year, 6, 30)
                     exists = session.query(FinancialStatement).filter_by(
@@ -185,10 +194,13 @@ class FundamentalsCollector(BaseCollector):
                         )
                         session.add(stmt)
                         count += 1
-                time.sleep(0.3)
-                
-                # Q3 (3분기)
-                parsed = self.dart.get_financial_statements(corp_code, year, "11014")
+                        logger.info(f"[DART] {ticker} 2024-Q2 수집")
+            time.sleep(0.5)
+            
+            # Q3 (3분기)
+            raw_data = self.dart.get_financial_statements(corp_code, year, "11014", "CFS")
+            if raw_data:
+                parsed = self.dart.parse_financial_statements(raw_data)
                 if parsed:
                     period_end = date(year, 9, 30)
                     exists = session.query(FinancialStatement).filter_by(
@@ -208,7 +220,8 @@ class FundamentalsCollector(BaseCollector):
                         )
                         session.add(stmt)
                         count += 1
-                time.sleep(0.3)
+                        logger.info(f"[DART] {ticker} 2024-Q3 수집")
+            time.sleep(0.5)
 
         except Exception as e:
             import traceback
