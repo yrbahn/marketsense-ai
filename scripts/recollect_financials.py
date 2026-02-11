@@ -8,19 +8,24 @@ DART API 데이터 구조 변경 후 재무제표를 재수집합니다.
 import sys
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # 프로젝트 루트를 Python 경로에 추가
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.config import load_config
+# .env 파일 로드
+load_dotenv(project_root / ".env")
+
+from src.utils.helpers import load_config
 from src.storage.database import Database
 from src.collectors.fundamentals_collector import FundamentalsCollector
 
 def main():
     """재무제표 재수집 실행"""
     config = load_config()
-    db = Database(config)
+    db_url = config.get("data", {}).get("db_url", "postgresql://yrbahn@localhost:5432/marketsense")
+    db = Database(db_url)
     
     print("🔄 재무제표 재수집 시작...")
     print("⚠️  이전 데이터는 유지되며, 중복 체크 후 새 데이터만 추가됩니다.")
