@@ -106,12 +106,15 @@ class FundamentalsCollector(BaseCollector):
     def _collect_financials_dart(self, session, ticker: str, stock_id: int) -> int:
         """DART API로 재무제표 수집 (2024년 4개 분기)"""
         count = 0
+        results = {"Q1": False, "Q2": False, "Q3": False, "Q4": False}
 
         # DART 고유번호 조회
         corp_code = self.corp_code_map.get(ticker)
         if not corp_code:
             logger.debug(f"[DART] {ticker} 고유번호 없음")
             return 0
+
+        logger.info(f"[DART] {ticker} 처리 중...")
 
         try:
             # 2024년 사업보고서 (Q4 포함)
@@ -138,7 +141,9 @@ class FundamentalsCollector(BaseCollector):
                         )
                         session.add(stmt)
                         count += 1
-                        logger.info(f"[DART] {ticker} 2024년 사업보고서 수집")
+                        results["Q4"] = True
+                    else:
+                        results["Q4"] = True  # 이미 존재
             
             time.sleep(0.5)
 
@@ -168,7 +173,9 @@ class FundamentalsCollector(BaseCollector):
                         )
                         session.add(stmt)
                         count += 1
-                        logger.info(f"[DART] {ticker} 2024-Q1 수집")
+                        results["Q1"] = True
+                    else:
+                        results["Q1"] = True  # 이미 존재
             time.sleep(0.5)
             
             # Q2 (반기)
@@ -194,7 +201,9 @@ class FundamentalsCollector(BaseCollector):
                         )
                         session.add(stmt)
                         count += 1
-                        logger.info(f"[DART] {ticker} 2024-Q2 수집")
+                        results["Q2"] = True
+                    else:
+                        results["Q2"] = True  # 이미 존재
             time.sleep(0.5)
             
             # Q3 (3분기)
@@ -220,12 +229,21 @@ class FundamentalsCollector(BaseCollector):
                         )
                         session.add(stmt)
                         count += 1
-                        logger.info(f"[DART] {ticker} 2024-Q3 수집")
+                        results["Q3"] = True
+                    else:
+                        results["Q3"] = True  # 이미 존재
             time.sleep(0.5)
+            
+            # 결과 요약
+            success_quarters = [q for q, success in results.items() if success]
+            if success_quarters:
+                logger.info(f"[DART] {ticker} 완료: {', '.join(success_quarters)} ({count}개 신규)")
+            else:
+                logger.warning(f"[DART] {ticker} 데이터 없음")
 
         except Exception as e:
             import traceback
-            logger.error(f"[DART] {ticker} 실패: {e}")
+            logger.error(f"[DART] {ticker} 오류: {e}")
             logger.error(traceback.format_exc())
 
         return count
