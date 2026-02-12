@@ -7,9 +7,9 @@ database:
 
 llm:
   provider: google  # google (Gemini)
-  gemini_model: gemini-flash-latest
+  gemini_model: gemini-flash-latest  # Gemini Flash (최신 안정 버전)
   temperature: 0.2
-  max_tokens: 4096
+  max_tokens: 8192
 
 # ═══════════════════════════════════════════
 # 1. 뉴스 데이터 소스 (한국)

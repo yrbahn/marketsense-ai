@@ -182,7 +182,7 @@ class VectorStore:
         query: str,
         ticker: Optional[str] = None,
         date_after: Optional[str] = None,
-        top_k: int = 10
+        top_k: int = 5  # 최적화: 10 → 5
     ) -> List[Dict]:
         """뉴스 검색
         

@@ -51,7 +51,7 @@ def get_top_stocks(db, limit: int = 50) -> List[Tuple[str, str]]:
 
 
 def get_market_summary(db) -> dict:
-    """시장 현황 조회
+    """시장 현황 조회 (실시간)
     
     Args:
         db: 데이터베이스
@@ -59,11 +59,63 @@ def get_market_summary(db) -> dict:
     Returns:
         {'kospi': ..., 'kosdaq': ...}
     """
-    # 실제로는 지수 데이터를 수집해야 하지만, 임시로 더미 데이터
-    return {
-        "kospi": "상승세",
-        "kosdaq": "보합세"
-    }
+    import yfinance as yf
+    
+    summary = {}
+    
+    try:
+        # 코스피 지수
+        kospi = yf.Ticker('^KS11')
+        kospi_data = kospi.history(period='2d')
+        
+        if len(kospi_data) >= 2:
+            today_close = kospi_data.iloc[-1]['Close']
+            yesterday_close = kospi_data.iloc[-2]['Close']
+            change_pct = ((today_close - yesterday_close) / yesterday_close) * 100
+            
+            if change_pct > 0.5:
+                trend = f"상승세 (+{change_pct:.2f}%)"
+            elif change_pct < -0.5:
+                trend = f"하락세 ({change_pct:.2f}%)"
+            else:
+                trend = f"보합세 ({change_pct:+.2f}%)"
+            
+            summary['kospi'] = trend
+            summary['kospi_value'] = f"{today_close:,.2f}"
+            summary['kospi_change'] = f"{change_pct:+.2f}%"
+        else:
+            summary['kospi'] = "데이터 없음"
+    except Exception as e:
+        logger.error(f"코스피 지수 조회 실패: {e}")
+        summary['kospi'] = "조회 실패"
+    
+    try:
+        # 코스닥 지수
+        kosdaq = yf.Ticker('^KQ11')
+        kosdaq_data = kosdaq.history(period='2d')
+        
+        if len(kosdaq_data) >= 2:
+            today_close = kosdaq_data.iloc[-1]['Close']
+            yesterday_close = kosdaq_data.iloc[-2]['Close']
+            change_pct = ((today_close - yesterday_close) / yesterday_close) * 100
+            
+            if change_pct > 0.5:
+                trend = f"상승세 (+{change_pct:.2f}%)"
+            elif change_pct < -0.5:
+                trend = f"하락세 ({change_pct:.2f}%)"
+            else:
+                trend = f"보합세 ({change_pct:+.2f}%)"
+            
+            summary['kosdaq'] = trend
+            summary['kosdaq_value'] = f"{today_close:,.2f}"
+            summary['kosdaq_change'] = f"{change_pct:+.2f}%"
+        else:
+            summary['kosdaq'] = "데이터 없음"
+    except Exception as e:
+        logger.error(f"코스닥 지수 조회 실패: {e}")
+        summary['kosdaq'] = "조회 실패"
+    
+    return summary
 
 
 def analyze_single_stock(args: Tuple[str, str]) -> Optional[Tuple[str, str, str, float]]:

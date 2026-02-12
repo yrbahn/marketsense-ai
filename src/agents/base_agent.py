@@ -3,8 +3,15 @@ import os
 import logging
 from typing import Dict, Any, Optional
 import google.generativeai as genai
+from datetime import datetime, timedelta
+import hashlib
+import json
 
 logger = logging.getLogger("marketsense")
+
+# LLM 응답 캐시 (메모리 기반, TTL=1일)
+_llm_cache = {}
+_cache_ttl = timedelta(days=1)
 
 
 class BaseAgent:
@@ -39,11 +46,37 @@ class BaseAgent:
 
         logger.info(f"[{self.__class__.__name__}] Gemini 모델 초기화: {model_name}")
 
-    def generate(self, prompt: str, **kwargs) -> str:
-        """Gemini API 호출"""
+    def generate(self, prompt: str, use_cache: bool = True, **kwargs) -> str:
+        """Gemini API 호출 (캐싱 지원)"""
+        # 캐시 키 생성 (프롬프트 해시)
+        if use_cache:
+            cache_key = hashlib.md5(prompt.encode()).hexdigest()
+            
+            # 캐시 확인
+            if cache_key in _llm_cache:
+                cached_data = _llm_cache[cache_key]
+                # TTL 확인
+                if datetime.now() - cached_data['timestamp'] < _cache_ttl:
+                    logger.debug(f"[{self.__class__.__name__}] 캐시 히트: {cache_key[:8]}...")
+                    return cached_data['response']
+                else:
+                    # 만료된 캐시 삭제
+                    del _llm_cache[cache_key]
+        
+        # API 호출
         try:
             response = self.model.generate_content(prompt)
-            return response.text
+            result = response.text
+            
+            # 캐시 저장
+            if use_cache:
+                _llm_cache[cache_key] = {
+                    'response': result,
+                    'timestamp': datetime.now()
+                }
+                logger.debug(f"[{self.__class__.__name__}] 캐시 저장: {cache_key[:8]}...")
+            
+            return result
         except Exception as e:
             logger.error(f"[{self.__class__.__name__}] Gemini API 오류: {e}")
             raise

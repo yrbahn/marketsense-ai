@@ -51,14 +51,18 @@ class FundamentalsAgent(BaseAgent):
    - "화장품은 경기소비재로 일반적 PER 12-15배"
    - "경쟁사는 아모레퍼시픽, LG생활건강 등 대형사"
 
-📈 Step 4: 시계열 추세 분석 (YoY/QoQ)
+📈 Step 4: 시계열 추세 분석 (YoY/QoQ) ⭐ 가장 중요!
+   - **위에 제공된 4분기 추세 분석을 필수로 참고하세요**
    - **전년 동기 대비 (YoY)**: 계절성 제거, 진정한 성장 파악
+     예: "매출 YoY +32% → 전년 같은 분기보다 32% 성장"
    - **전분기 대비 (QoQ)**: 최근 모멘텀 확인
-   - 최근 8개 분기 변화 패턴 파악
-   - "매출 YoY +32%, QoQ +8% → 가속 성장"
-   - "영업이익 YoY +45%, QoQ +12% → 레버리지 효과"
-   - "ROE 13% → 15%로 개선 추세"
-   - **중요**: 매출과 영업이익의 유의미한 변화에 집중
+     예: "영업이익 QoQ +12% → 직전 분기보다 12% 증가"
+   - **이익 레버리지 효과**: 매출 증가율 < 영업이익 증가율 → 긍정적
+     예: "매출 QoQ -4.4%, 영업이익 QoQ +3.4% → 수익성 개선"
+   - **4분기 추세**: 상승/하락/횡보 명시
+     예: "매출 📈 상승 추세, 영업이익 📈 상승 추세 → 성장 가속"
+   - **ROE 추세**: 15.1% → 15.5% → 개선 중
+   - **중요**: 증감률은 위에 계산되어 제공됨 - 반드시 활용하세요!
 
 ⚖️ Step 5: 상대 밸류에이션 판단
    - 업종 평균 PER 추론 (예: 12-15배)
@@ -115,11 +119,22 @@ class FundamentalsAgent(BaseAgent):
    - 자본총계 추이
    - 재무 리스크 평가
 
-5. 현금흐름 분석
-   - 영업활동 현금흐름: 양수 필수
-   - 잉여현금흐름 (FCF): 양수 우량
-   - 현금 창출 능력
-   - 배당 여력
+5. 현금흐름 분석 (핵심!)
+   - **영업활동 현금흐름**: 양수 필수, 4분기 추세 확인
+   - **잉여현금흐름 (FCF)**: 영업CF - 투자CF
+     * FCF > 0: 우량 (자체 성장 + 배당 가능)
+     * FCF < 0: 투자 확대 중 (성장주는 일시적 음수 가능)
+   - **현금창출 품질**: 영업CF / 당기순이익 * 100
+     * 100% 이상: 우수 (이익이 현금으로 전환됨)
+     * 80-100%: 양호
+     * 80% 미만: 주의 (회계 이익만 많고 현금 부족)
+   - **현금흐름 마진**: 영업CF / 매출액 * 100
+     * 높을수록 현금 창출력 우수
+   - **4분기 현금흐름 추세**: 
+     * 영업CF 지속 증가 → 매우 긍정
+     * FCF 지속 양수 → 재무 건전성 우수
+     * 투자CF 큰 음수 → 공격적 투자 (성장 기대)
+   - 배당 여력 평가
 
 6. 동종업계 비교 (핵심!)
    - **업종 특성 이해**: 성장주/가치주/경기소비재 등
@@ -215,7 +230,10 @@ class FundamentalsAgent(BaseAgent):
     "rating": "high|moderate|low|negative",
     "revenue_growth_yoy": 숫자,
     "profit_growth_yoy": 숫자,
+    "revenue_growth_qoq": 숫자 (전분기 대비),
+    "profit_growth_qoq": 숫자 (전분기 대비),
     "quarterly_trend": "accelerating|stable|decelerating",
+    "quarterly_details": "4분기 추세 상세 (상승/하락/횡보)",
     "sustainability": "high|moderate|low",
     "drivers": "성장 동력 설명"
   },
@@ -224,15 +242,24 @@ class FundamentalsAgent(BaseAgent):
     "rating": "strong|moderate|weak|risky",
     "debt_ratio": 숫자,
     "current_ratio": 숫자,
-    "interest_coverage": 숫자 또는 null,
+    "quick_ratio": 숫자 (당좌비율),
+    "equity_ratio": 숫자 (자기자본비율),
+    "interest_coverage": 숫자 또는 null (이자보상배율),
     "equity_trend": "increasing|stable|decreasing",
+    "liquidity_assessment": "유동성 평가 (우수/양호/보통/위험)",
     "risks": "재무 리스크 설명"
   },
   
   "cash_flow": {
     "rating": "strong|adequate|weak",
-    "operating_cf": "양호|보통|부족",
-    "free_cf": "양호|보통|부족",
+    "operating_cf": 숫자 (억원),
+    "investing_cf": 숫자 (억원),
+    "financing_cf": 숫자 (억원),
+    "free_cf": 숫자 (억원, FCF),
+    "cf_quality": 숫자 (현금창출품질 %),
+    "cf_margin": 숫자 (현금흐름마진 %),
+    "quarterly_cf_trend": "개선|안정|악화",
+    "interpretation": "영업CF 양호, FCF 양수 유지, 현금창출 품질 우수",
     "cash_generating_power": "우수|보통|약함",
     "dividend_capacity": "high|moderate|low"
   },
@@ -310,6 +337,19 @@ class FundamentalsAgent(BaseAgent):
                     "error": "재무제표 데이터가 없습니다",
                 }
 
+            # 4분기 추세 분석 추가
+            from src.utils.financial_metrics import (
+                format_quarterly_trend,
+                calculate_additional_metrics
+            )
+            
+            trend_analysis = format_quarterly_trend(statements)
+            
+            # 최신 분기 추가 지표 계산
+            additional_metrics = {}
+            if statements:
+                additional_metrics = calculate_additional_metrics(statements[0])
+            
             # 재무 데이터 요약
             financials_text = []
             for stmt in statements:
@@ -340,6 +380,15 @@ class FundamentalsAgent(BaseAgent):
                     # 현금흐름
                     if data.get('operating_cash_flow'):
                         financials_text.append(f"  - 영업활동현금흐름: {data['operating_cash_flow']:,.0f}원")
+                    if data.get('investing_cash_flow'):
+                        financials_text.append(f"  - 투자활동현금흐름: {data['investing_cash_flow']:,.0f}원")
+                    if data.get('financing_cash_flow'):
+                        financials_text.append(f"  - 재무활동현금흐름: {data['financing_cash_flow']:,.0f}원")
+                    
+                    # FCF 계산 표시
+                    if data.get('operating_cash_flow') and data.get('investing_cash_flow'):
+                        fcf = data['operating_cash_flow'] + data['investing_cash_flow']
+                        financials_text.append(f"  - 잉여현금흐름(FCF): {fcf:,.0f}원")
                     
                     # 계산 지표
                     if data.get('roe'):
@@ -364,6 +413,8 @@ class FundamentalsAgent(BaseAgent):
                         "부채총계",
                         "자본총계",
                         "영업활동현금흐름",
+                        "투자활동현금흐름",
+                        "재무활동현금흐름",
                     ]
                     for key in key_items:
                         if key in stmt.raw_data and stmt.raw_data[key] is not None:
@@ -535,6 +586,35 @@ class FundamentalsAgent(BaseAgent):
                     if r.target_price:
                         report_text += f"    - 목표주가: {r.target_price:,.0f}원\n"
             
+            # 추가 지표 텍스트 생성
+            additional_metrics_text = ""
+            if additional_metrics:
+                additional_metrics_text = "\n\n최신 분기 추가 지표:\n"
+                
+                # 안정성 지표
+                additional_metrics_text += "【안정성】\n"
+                if 'current_ratio' in additional_metrics:
+                    additional_metrics_text += f"  • 유동비율: {additional_metrics['current_ratio']:.1f}%\n"
+                if 'quick_ratio' in additional_metrics:
+                    additional_metrics_text += f"  • 당좌비율: {additional_metrics['quick_ratio']:.1f}%\n"
+                if 'equity_ratio' in additional_metrics:
+                    additional_metrics_text += f"  • 자기자본비율: {additional_metrics['equity_ratio']:.1f}%\n"
+                if 'interest_coverage' in additional_metrics:
+                    additional_metrics_text += f"  • 이자보상배율: {additional_metrics['interest_coverage']:.2f}배\n"
+                
+                # 현금흐름 지표
+                if any(k in additional_metrics for k in ['free_cash_flow_billions', 'cf_to_ni_ratio', 'cf_margin']):
+                    additional_metrics_text += "\n【현금흐름】\n"
+                    if 'free_cash_flow_billions' in additional_metrics:
+                        fcf = additional_metrics['free_cash_flow_billions']
+                        additional_metrics_text += f"  • 잉여현금흐름(FCF): {fcf:+.1f}억원\n"
+                    if 'cf_to_ni_ratio' in additional_metrics:
+                        cf_ratio = additional_metrics['cf_to_ni_ratio']
+                        quality = "우수" if cf_ratio >= 100 else "양호" if cf_ratio >= 80 else "주의"
+                        additional_metrics_text += f"  • 현금창출품질: {cf_ratio:.1f}% ({quality})\n"
+                    if 'cf_margin' in additional_metrics:
+                        additional_metrics_text += f"  • 현금흐름마진: {additional_metrics['cf_margin']:.1f}%\n"
+            
             # Gemini로 분석
             prompt = f"""{self.SYSTEM_PROMPT}
 
@@ -542,13 +622,20 @@ class FundamentalsAgent(BaseAgent):
 업종: {stock.industry or 'N/A'}
 
 재무제표 (최근 8개 분기 = 2년):
-{''.join(financials_text)}{peer_text}{valuation_text}{report_text}
+{''.join(financials_text)}{trend_analysis}{additional_metrics_text}{peer_text}{valuation_text}{report_text}
 
 분석 시 중점 사항:
-1. YoY (전년 동기 대비) 성장률 계산 및 추세 파악
-2. QoQ (전분기 대비) 변화 추이 분석
-3. 2년간 성장 가속/둔화 여부
-4. 계절성 패턴 존재 여부
+1. **4분기 연속 추세 분석** - 위에 제공된 YoY, QoQ 증감률을 반드시 참고하세요
+2. **추세 판단** - 매출/영업이익/ROE/현금흐름이 상승/하락/횡보 중 어떤 추세인지 명시
+3. **수익성 레버리지** - 매출 대비 영업이익 증가율이 더 높은지 확인 (이익 레버리지 효과)
+4. **현금흐름 품질** ⭐ 매우 중요!
+   - 영업CF가 당기순이익보다 많으면 우수 (현금창출품질 100% 이상)
+   - FCF 양수이면 자체 성장력 있음
+   - 4분기 영업CF 추세가 상승이면 매우 긍정
+   - "이익은 많은데 현금이 없다" = 회계 이익, 실질 가치 의심
+5. **안정성 지표** - 유동비율, 당좌비율, 자기자본비율, 이자보상배율 평가
+6. **계절성 패턴** - 특정 분기에 매출/이익이 집중되는지 확인
+7. **YoY vs QoQ** - 전년 동기 대비는 성장세, 전분기 대비는 최근 모멘텀 의미
 5. 수익성/안정성 지표의 시계열 추이
 6. **밸류에이션 분석** (핵심!)
    - 제공된 PER, 적정가 범위 참조
